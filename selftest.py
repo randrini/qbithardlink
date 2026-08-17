@@ -31,10 +31,10 @@ import classifier
 import metadata
 
 
-def analyze_name(name, tags=""):
-    """Run the full classify() cascade on a name; return a report dict."""
+def analyze_name(name, tags="", use_metadata=True):
+    """Run the classify() cascade on a name; return a report dict."""
     cleaned = classifier.clean_release_name(name)
-    pred, conf, reasons = classifier.classify(name, tags, use_metadata=True)
+    pred, conf, reasons = classifier.classify(name, tags, use_metadata=use_metadata)
     return {
         "raw_name": name,
         "cleaned_title": cleaned,
@@ -44,7 +44,7 @@ def analyze_name(name, tags=""):
     }
 
 
-def run_against_qbittorrent(dry_run=True, category=None, limit=None):
+def run_against_qbittorrent(dry_run=True, category=None, limit=None, use_metadata=True):
     """Poll qBittorrent torrents, classify each, and optionally route them.
 
     If `category` is given, only torrents currently in that qBit category are
@@ -76,7 +76,7 @@ def run_against_qbittorrent(dry_run=True, category=None, limit=None):
     }
 
     for t in selected:
-        r = analyze_name(t.get("name", ""), t.get("tags", ""))
+        r = analyze_name(t.get("name", ""), t.get("tags", ""), use_metadata=use_metadata)
         r["hash"] = t.get("hash")
         r["current_category"] = t.get("category")
         r["size_mb"] = round((t.get("size") or 0) / 1048576, 1)
@@ -101,11 +101,12 @@ def main():
     ap.add_argument("--name", help="test a single release name (no qBittorrent needed)")
     ap.add_argument("--category", help="only analyze torrents currently in this qBit category (default: all)")
     ap.add_argument("--limit", type=int, help="limit number of torrents to test")
+    ap.add_argument("--skip-metadata", action="store_true", help="use regex-only classification (fast)")
     args = ap.parse_args()
 
     # Mode 1: test a single name (no qBittorrent)
     if args.name:
-        r = analyze_name(args.name)
+        r = analyze_name(args.name, use_metadata=not args.skip_metadata)
         print(json.dumps(r, ensure_ascii=False, indent=2))
         return
 
@@ -113,7 +114,9 @@ def main():
     dry_run = not args.live
     if dry_run:
         print("DRY RUN — read-only. Use --live to actually route torrents.")
-    report = run_against_qbittorrent(dry_run=dry_run, category=args.category, limit=args.limit)
+    if args.skip_metadata:
+        print("METADATA DISABLED — using regex-only classification.")
+    report = run_against_qbittorrent(dry_run=dry_run, category=args.category, limit=args.limit, use_metadata=not args.skip_metadata)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
     # Summary

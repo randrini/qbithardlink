@@ -40,6 +40,7 @@ tag_overrides:
 # Keys can be set here or via env vars (GOOGLE_BOOKS_API_KEY).
 metadata:
   enabled: true
+  timeout_seconds: 25        # max time to spend querying providers per title
   flaresolverr_url: "http://10.0.0.42:8191"
   google_books_api_key: ""    # or set GOOGLE_BOOKS_API_KEY env var
   providers:

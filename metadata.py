@@ -67,10 +67,35 @@ except Exception:
     _META_ENABLED = True
 
 
+# Cached FlareSolverr availability flag.
+_FLARESOLVERR_OK = None
+_FLARESOLVERR_WARNED = False
+
+
+def _flaresolverr_available():
+    """Check (and cache) whether FlareSolverr is reachable."""
+    global _FLARESOLVERR_OK, _FLARESOLVERR_WARNED
+    if not HAS_REQUESTS or not FLARESOLVERR_URL:
+        _FLARESOLVERR_OK = False
+        return False
+    if _FLARESOLVERR_OK is not None:
+        return _FLARESOLVERR_OK
+    try:
+        r = _requests.get(f"{FLARESOLVERR_URL}/v1", timeout=3)
+        _FLARESOLVERR_OK = r.status_code == 200
+    except Exception:
+        _FLARESOLVERR_OK = False
+    if not _FLARESOLVERR_OK and not _FLARESOLVERR_WARNED:
+        _FLARESOLVERR_WARNED = True
+        log.warning("FlareSolverr unavailable at %s; disabling JS-dependent providers", FLARESOLVERR_URL)
+    return _FLARESOLVERR_OK
+
+
 def _flaresolverr_get(url, max_timeout=20000):
     """Fetch a URL through FlareSolverr (bypasses Cloudflare/anti-bot)."""
     if not HAS_REQUESTS:
-        log.warning("requests not installed; cannot use FlareSolverr")
+        return None
+    if not _flaresolverr_available():
         return None
     try:
         resp = _requests.post(
@@ -609,21 +634,20 @@ def _provider_rate_limit(pid, default):
 
 
 def _build_providers(google_books_key=None):
+    """Build provider list ordered by speed / reliability.
+
+    Fast no-key API providers go first so that lookup_category can reach a 2-provider
+    consensus quickly. JS/FlareSolverr-dependent providers are queried last.
+    """
     providers = []
-    # Manga / webtoon / light-novel
+
+    # 1. Manga / webtoon — fast, public API
     if _provider_enabled("mangadex"):
         p = MangaDexProvider()
         p.rate_limit = _provider_rate_limit("mangadex", p.rate_limit)
         providers.append(p)
-    if _provider_enabled("kitsu"):
-        p = KitsuProvider()
-        p.rate_limit = _provider_rate_limit("kitsu", p.rate_limit)
-        providers.append(p)
-    if _provider_enabled("shikimori"):
-        p = ShikimoriProvider()
-        p.rate_limit = _provider_rate_limit("shikimori", p.rate_limit)
-        providers.append(p)
-    # Ebooks
+
+    # 2. Ebooks — fast, public APIs
     if _provider_enabled("openlibrary"):
         p = OpenLibraryProvider()
         p.rate_limit = _provider_rate_limit("openlibrary", p.rate_limit)
@@ -632,7 +656,18 @@ def _build_providers(google_books_key=None):
         p = GoogleBooksProvider(google_books_key)
         p.rate_limit = _provider_rate_limit("googlebooks", p.rate_limit)
         providers.append(p)
-    # BD / comics
+
+    # 3. Anime/manga metadata — public APIs, sometimes slow
+    if _provider_enabled("shikimori"):
+        p = ShikimoriProvider()
+        p.rate_limit = _provider_rate_limit("shikimori", p.rate_limit)
+        providers.append(p)
+    if _provider_enabled("kitsu"):
+        p = KitsuProvider()
+        p.rate_limit = _provider_rate_limit("kitsu", p.rate_limit)
+        providers.append(p)
+
+    # 4. BD / comics — require FlareSolverr (JS rendering)
     if _provider_enabled("planetebd"):
         p = PlaneteBDProvider()
         p.rate_limit = _provider_rate_limit("planetebd", p.rate_limit)
@@ -658,10 +693,10 @@ FORMAT_TO_CATEGORY = {
 def lookup_category(title, google_books_key=None):
     """Query providers for a release title, return (category, confidence, provider, reason).
 
-    Uses PROVIDER VOTING: query all providers for a title, tally the categories
-    they return, and only route if 2+ independent providers agree (or a single
-    provider is unambiguous for its type). This prevents the false positive
-    where one provider matches a wrong-but-similar title.
+    Uses PROVIDER VOTING: query providers in priority order, tally the categories
+    they return, and stop early once 2+ independent providers agree. This keeps
+    the common case fast while still preventing false positives from a single
+    provider.
 
     Returns (None, 0.0, None, reason) if no provider resolves it.
     """
@@ -670,10 +705,14 @@ def lookup_category(title, google_books_key=None):
     if google_books_key is None:
         google_books_key = GOOGLE_BOOKS_API_KEY or None
     providers = _build_providers(google_books_key)
+    deadline = time.time() + float(_cfg.get("metadata.timeout_seconds", 25))
 
     votes = {}   # category -> [provider_ids]
     best_by_cat = {}
     for p in providers:
+        if time.time() > deadline:
+            log.debug("Metadata lookup deadline reached for %r", title)
+            break
         try:
             cand = p.lookup(title)
         except Exception as e:
@@ -685,10 +724,12 @@ def lookup_category(title, google_books_key=None):
         if not cat:
             continue
         votes.setdefault(cat, []).append(p.id)
-        # Track best confidence per category
         cur = best_by_cat.get(cat)
         if cur is None or cand.get("confidence", 0) > cur.get("confidence", 0):
             best_by_cat[cat] = cand
+        # Early-exit: 2 independent providers agree → consensus reached.
+        if len(votes[cat]) >= 2:
+            break
 
     if not votes:
         return None, 0.0, None, "no provider match"
@@ -699,7 +740,6 @@ def lookup_category(title, google_books_key=None):
     best_count = 0
     for cat, ids in votes.items():
         if len(ids) >= 2:
-            # Multiple providers agree → strong signal, prefer this
             if len(ids) > best_count:
                 best_cat, best_count = cat, len(ids)
     if best_cat is None and len(votes) == 1:
@@ -708,7 +748,6 @@ def lookup_category(title, google_books_key=None):
     if best_cat:
         cand = best_by_cat[best_cat]
         voters = votes[best_cat]
-        # Raise confidence for multi-provider agreement; cap at 1.0
         conf = min(cand.get("confidence", 0.7) + 0.05 * (len(voters) - 1), 1.0)
         return best_cat, conf, "+".join(voters), cand.get("title")
     # Disagreement with no 2-provider agreement → unresolved, tag for review
