@@ -28,10 +28,10 @@ import sys
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 
 # Configuration (config.yaml + env overrides)
 import config as cfg
+import requests
 
 log = logging.getLogger("classifier")
 
@@ -195,30 +195,28 @@ class QBClient:
         self.url = url.rstrip("/")
         self.user = user
         self.password = password
-        self.cookies = {}
+        self.session = requests.Session()
+        self.session.headers.update({"Referer": self.url, "User-Agent": "qbithardlink/1.0"})
 
     def _request(self, path, data=None):
         url = f"{self.url}/api/v2/{path}"
-        body = urllib.parse.urlencode(data).encode() if data else None
-        req = urllib.request.Request(url, data=body)
-        if self.cookies:
-            req.add_header("Cookie", "; ".join(f"{k}={v}" for k, v in self.cookies.items()))
-        # qBittorrent WebAPI requires Referer to match the origin for non-GET requests.
-        req.add_header("Referer", self.url)
-        with urllib.request.urlopen(req) as resp:
-            # Capture session cookies (e.g. SID from auth/login).
-            for header in resp.getheaders():
-                if header[0].lower() == "set-cookie":
-                    cookie = header[1].split(";")[0].strip()
-                    if "=" in cookie:
-                        k, v = cookie.split("=", 1)
-                        self.cookies[k] = v
-            return resp.read()
+        if data is not None:
+            resp = self.session.post(url, data=data)
+        else:
+            resp = self.session.get(url)
+        resp.raise_for_status()
+        return resp.content
 
     def login(self):
-        self._request("auth/login", {"username": self.user, "password": self.password})
-        if "SID" not in self.cookies:
-            raise RuntimeError("qBittorrent login did not return a session cookie")
+        r = self.session.post(
+            f"{self.url}/api/v2/auth/login",
+            data={"username": self.user, "password": self.password},
+        )
+        if not r.ok:
+            log.error("qBittorrent login failed: HTTP %s — %s", r.status_code, r.text[:200])
+            raise RuntimeError(f"qBittorrent login failed: HTTP {r.status_code}")
+        if "SID" not in {c.name for c in self.session.cookies}:
+            log.warning("qBittorrent login OK but no SID cookie; bypass-auth may be enabled")
 
     def get_torrents(self):
         return json.loads(self._request("torrents/info"))
@@ -227,8 +225,8 @@ class QBClient:
         # qBittorrent returns 409 if the category does not exist yet.
         try:
             self._request("torrents/setCategory", {"hashes": hashes, "category": category})
-        except urllib.error.HTTPError as e:
-            if e.code == 409:
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 409:
                 self._request("torrents/createCategory", {"category": category, "savePath": ""})
                 self._request("torrents/setCategory", {"hashes": hashes, "category": category})
             else:
@@ -243,10 +241,11 @@ class QBClient:
                 "torrents/setAutoManagement",
                 {"hashes": hashes, "enable": "true" if enable else "false"},
             )
-        except urllib.error.HTTPError as e:
+        except requests.exceptions.HTTPError as e:
             # Older/newer qBittorrent builds may use enableAutoTMM or disagree
             # on parameter names; auto-management is optional, so log and continue.
-            log.warning("setAutoManagement failed (%s %s) — continuing", e.code, e.reason)
+            log.warning("setAutoManagement failed (%s %s) — continuing", e.response.status_code, e.response.reason)
+
 
 
 # ── Idempotency state ─────────────────────────────────────────────────────
