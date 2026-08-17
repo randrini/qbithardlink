@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -699,13 +700,27 @@ FORMAT_TO_CATEGORY = {
 }
 
 
+def _lookup_with_timeout(provider, title, timeout):
+    """Run a single provider.lookup() in a thread; return candidate or None."""
+    result = [None]
+    def _run():
+        try:
+            result[0] = provider.lookup(title)
+        except Exception as e:
+            log.debug("%s lookup error: %s", provider.id, e)
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout)
+    return result[0]
+
+
 def lookup_category(title, google_books_key=None):
     """Query providers for a release title, return (category, confidence, provider, reason).
 
     Uses PROVIDER VOTING: query providers in priority order, tally the categories
-    they return, and stop early once 2+ independent providers agree. This keeps
-    the common case fast while still preventing false positives from a single
-    provider.
+    they return, and stop early once 2+ independent providers agree. Each
+    provider call is wrapped with a thread-level timeout so a single slow
+    provider cannot block the whole cascade.
 
     Returns (None, 0.0, None, reason) if no provider resolves it.
     """
@@ -714,6 +729,8 @@ def lookup_category(title, google_books_key=None):
     if google_books_key is None:
         google_books_key = GOOGLE_BOOKS_API_KEY or None
     providers = _build_providers(google_books_key)
+    per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(providers), 1)
+    per_call_timeout = max(per_call_timeout, 5.0)
     deadline = time.time() + float(_cfg.get("metadata.timeout_seconds", 25))
 
     votes = {}   # category -> [provider_ids]
@@ -722,11 +739,7 @@ def lookup_category(title, google_books_key=None):
         if time.time() > deadline:
             log.debug("Metadata lookup deadline reached for %r", title)
             break
-        try:
-            cand = p.lookup(title)
-        except Exception as e:
-            log.debug("%s lookup error: %s", p.id, e)
-            continue
+        cand = _lookup_with_timeout(p, title, per_call_timeout)
         if not cand or not cand.get("format"):
             continue
         cat = FORMAT_TO_CATEGORY.get(cand["format"])

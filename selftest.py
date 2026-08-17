@@ -31,10 +31,14 @@ import classifier
 import metadata
 
 
-def analyze_name(name, tags="", use_metadata=True):
+def analyze_name(name, tags="", use_metadata=True, verbose=False):
     """Run the classify() cascade on a name; return a report dict."""
+    if verbose:
+        print(f"  → analyzing: {name[:70]}")
     cleaned = classifier.clean_release_name(name)
     pred, conf, reasons = classifier.classify(name, tags, use_metadata=use_metadata)
+    if verbose:
+        print(f"    result: {pred} (conf={conf:.2f}) {reasons[:3]}")
     return {
         "raw_name": name,
         "cleaned_title": cleaned,
@@ -44,7 +48,7 @@ def analyze_name(name, tags="", use_metadata=True):
     }
 
 
-def run_against_qbittorrent(dry_run=True, category=None, limit=None, use_metadata=True):
+def run_against_qbittorrent(dry_run=True, category=None, limit=None, use_metadata=True, verbose=False):
     """Poll qBittorrent torrents, classify each, and optionally route them.
 
     If `category` is given, only torrents currently in that qBit category are
@@ -75,8 +79,10 @@ def run_against_qbittorrent(dry_run=True, category=None, limit=None, use_metadat
         "results": [],
     }
 
-    for t in selected:
-        r = analyze_name(t.get("name", ""), t.get("tags", ""), use_metadata=use_metadata)
+    for i, t in enumerate(selected, 1):
+        if verbose:
+            print(f"[{i}/{len(selected)}] {t.get('name', '')[:60]}")
+        r = analyze_name(t.get("name", ""), t.get("tags", ""), use_metadata=use_metadata, verbose=verbose)
         r["hash"] = t.get("hash")
         r["current_category"] = t.get("category")
         r["size_mb"] = round((t.get("size") or 0) / 1048576, 1)
@@ -102,11 +108,12 @@ def main():
     ap.add_argument("--category", help="only analyze torrents currently in this qBit category (default: all)")
     ap.add_argument("--limit", type=int, help="limit number of torrents to test")
     ap.add_argument("--skip-metadata", action="store_true", help="use regex-only classification (fast)")
+    ap.add_argument("--verbose", action="store_true", help="print per-torrent progress")
     args = ap.parse_args()
 
     # Mode 1: test a single name (no qBittorrent)
     if args.name:
-        r = analyze_name(args.name, use_metadata=not args.skip_metadata)
+        r = analyze_name(args.name, use_metadata=not args.skip_metadata, verbose=args.verbose)
         print(json.dumps(r, ensure_ascii=False, indent=2))
         return
 
@@ -116,7 +123,7 @@ def main():
         print("DRY RUN — read-only. Use --live to actually route torrents.")
     if args.skip_metadata:
         print("METADATA DISABLED — using regex-only classification.")
-    report = run_against_qbittorrent(dry_run=dry_run, category=args.category, limit=args.limit, use_metadata=not args.skip_metadata)
+    report = run_against_qbittorrent(dry_run=dry_run, category=args.category, limit=args.limit, use_metadata=not args.skip_metadata, verbose=args.verbose)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
     # Summary
