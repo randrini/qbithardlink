@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -43,31 +44,46 @@ def analyze_name(name, tags=""):
     }
 
 
-def run_against_qbittorrent(dry_run=True, limit=None):
-    """Poll qBittorrent books-category torrents and classify each."""
+def run_against_qbittorrent(dry_run=True, category=None, limit=None):
+    """Poll qBittorrent torrents, classify each, and optionally route them.
+
+    If `category` is given, only torrents currently in that qBit category are
+    analyzed. If `category` is None, all torrents are analyzed.
+    """
     qb = classifier.QBClient(
         cfg.get("qb.url"), cfg.get("qb.user"), cfg.get("qb.password")
     )
     qb.login()
     torrents = qb.get_torrents()
-    books = [t for t in torrents if t.get("category") == "books"]
+
+    # Category distribution for diagnostics
+    from collections import Counter
+    dist = Counter(t.get("category") or "(uncategorized)" for t in torrents)
+
+    selected = torrents
+    if category:
+        selected = [t for t in torrents if t.get("category") == category]
     if limit:
-        books = books[:limit]
+        selected = selected[:limit]
 
     report = {
         "qbit_url": cfg.get("qb.url"),
-        "total_books_torrents": len(books),
+        "total_torrents": len(torrents),
+        "category_distribution": dict(sorted(dist.items(), key=lambda kv: -kv[1])),
+        "filtered_to_category": category,
+        "total_analyzed": len(selected),
         "results": [],
     }
 
-    for t in books:
+    for t in selected:
         r = analyze_name(t.get("name", ""), t.get("tags", ""))
         r["hash"] = t.get("hash")
+        r["current_category"] = t.get("category")
         r["size_mb"] = round((t.get("size") or 0) / 1048576, 1)
         report["results"].append(r)
 
-        if not dry_run and r["category"] != "books":
-            # Optionally route one torrent (tag it as selftest so it's identifiable)
+        if not dry_run and r["category"] != t.get("category"):
+            # Route torrent to predicted category, tag it as selftest
             qb.add_tags(t["hash"], "selftest")
             qb.set_category(t["hash"], r["category"])
             qb.set_auto_management(t["hash"], True)
@@ -83,6 +99,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="read-only: never mutate qBittorrent")
     ap.add_argument("--live", action="store_true", help="route test torrents (mutates qBittorrent)")
     ap.add_argument("--name", help="test a single release name (no qBittorrent needed)")
+    ap.add_argument("--category", help="only analyze torrents currently in this qBit category (default: all)")
     ap.add_argument("--limit", type=int, help="limit number of torrents to test")
     args = ap.parse_args()
 
@@ -96,13 +113,15 @@ def main():
     dry_run = not args.live
     if dry_run:
         print("DRY RUN — read-only. Use --live to actually route torrents.")
-    report = run_against_qbittorrent(dry_run=dry_run, limit=args.limit)
+    report = run_against_qbittorrent(dry_run=dry_run, category=args.category, limit=args.limit)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
     # Summary
     n = len(report["results"])
     routed = sum(1 for r in report["results"] if r["routed"])
-    print(f"\n--- {n} books torrents analyzed, {routed} routed ---")
+    cat_counts = Counter(r["category"] for r in report["results"])
+    print(f"\n--- {n} torrents analyzed, {routed} routed ---")
+    print("Predicted distribution:", dict(sorted(cat_counts.items(), key=lambda kv: -kv[1])))
 
 
 if __name__ == "__main__":
