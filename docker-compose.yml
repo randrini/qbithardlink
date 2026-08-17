@@ -37,6 +37,6 @@ services:
       # Persistent idempotency state.
       - ./.classifier_state.json:/app/.classifier_state.json
       # qBittorrent downloads — ADJUST to your actual download path.
-      - /mnt/user/data:/data
+      - /mnt/user/data/torrents:/data/torrents
       # Library destination for hardlinks — ADJUST to your media library path.
       - /mnt/user/media/books:/data/media/books
