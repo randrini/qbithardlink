@@ -19,6 +19,7 @@ Usage:
   classifier.py --test     # run against corpus.txt and report accuracy
 """
 import json
+import logging
 import os
 import re
 import sys
@@ -29,6 +30,8 @@ import urllib.request
 
 # Configuration (config.yaml + env overrides)
 import config as cfg
+
+log = logging.getLogger("classifier")
 
 # Optional metadata lookup (free/no-key providers). Imported lazily so the
 # classifier still works if metadata.py is missing or its deps are absent.
@@ -222,10 +225,15 @@ class QBClient:
         self._request("torrents/addTags", {"hashes": hashes, "tags": tags})
 
     def set_auto_management(self, hashes, enable=True):
-        self._request(
-            "torrents/setAutoManagement",
-            {"hashes": hashes, "enableAutoTMM": "true" if enable else "false"},
-        )
+        try:
+            self._request(
+                "torrents/setAutoManagement",
+                {"hashes": hashes, "enable": "true" if enable else "false"},
+            )
+        except urllib.error.HTTPError as e:
+            # Older/newer qBittorrent builds may use enableAutoTMM or disagree
+            # on parameter names; auto-management is optional, so log and continue.
+            log.warning("setAutoManagement failed (%s %s) — continuing", e.code, e.reason)
 
 
 # ── Idempotency state ─────────────────────────────────────────────────────
