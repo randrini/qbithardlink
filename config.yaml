@@ -108,14 +108,21 @@ rules:
       - ["(?i)\\bmanga[- ]zip\\b", 1.0]
       - ["(?i)\\bviz media\\b", 1.0]
       - ["(?i)\\bhybrid manga\\b", 1.0]
-      - ["(?i)\\bT\\d{2}\\b", 0.7]
+      - ["(?i)\\bT\\d{1,4}\\b", 0.7]
       - ["(?i)\\b[0-9]{4}\\b.*\\bvol\\.?\\s*\\d+\\b", 0.3]
+      - ["(?i)\\bchi\\b.*\\b(vie de chat|une vie)\\b", 1.0]
+      - ["(?i)\\bswitch\\s*girl\\b", 1.0]
+      - ["(?i)\\ball you need is kill\\b", 1.0]
+      - ["(?i)\\[cbz\\]", 0.3]
+      - ["(?i)\\[cbr\\]", 0.3]
   manhwa:
     min_score: 0.9
     patterns:
       - ["(?i)\\bmanhwa\\b", 1.0]
       - ["(?i)\\bkorean\\b", 0.8]
       - ["(?i)\\bwebtoon\\b", 0.9]
+      - ["(?i)\\bch\\.?\\d{1,4}(-ch\\.?\\d{1,4})?\\b", 1.0]
+      - ["(?i)\\bep\\.?\\d{1,4}\\b", 0.9]
   comics:
     min_score: 0.9
     patterns:
@@ -132,6 +139,11 @@ rules:
       - ["(?i)\\bannual\\b", 0.8]
       - ["(?i)\\bgraphic novel\\b", 0.9]
       - ["(?i)\\bcomic\\b", 0.8]
+      - ["(?i)\\bthe walking dead\\b", 1.0]
+      - ["(?i)\\bbloodborne\\b", 1.0]
+      - ["(?i)\\bson of ultron\\b", 1.0]
+      - ["(?i)\\bempire\\b", 0.7]
+      - ["(?i)\\bzone-empire\\b", 1.0]
   bd:
     min_score: 0.9
     patterns:
@@ -151,14 +163,18 @@ rules:
       - ["(?i)\\b\\[?int?egrale\\]?\\b", 0.5]
       - ["(?i)\\b\\[?collection\\]?\\b", 0.5]
       - ["(?i)\\b\\[?tome\\]?\\b", 0.4]
-      - ["(?i)\\[cbr\\]", 0.6]
-      - ["(?i)\\[cbz\\]", 0.6]
+      - ["(?i)\\bspirou\\b", 1.0]
+      - ["(?i)\\bekh[oö]\\b", 1.0]
+      - ["(?i)\\basterix\\b", 1.0]
+      - ["(?i)\\[cbr\\]", 0.9]
+      - ["(?i)\\[cbz\\]", 0.9]
+      - ["(?i)\\bcbr\\b", 0.9]
+      - ["(?i)\\bcb[rz]\\b", 0.9]
   light-novel:
     min_score: 0.9
     patterns:
-      - ["(?i)\\blight[- ]novel\\b", 1.0]
+      - ["(?i)\\blight[- ]?novel\\b", 1.0]
       - ["(?i)\\bln\\b", 0.6]
       - ["(?i)\\bpart\\s*\\d+\\b", 0.6]
-      - ["(?i)\\btome\\b", 0.9]
       - ["(?i)\\bvol\\.?\\s*\\d+\\b", 0.4]
       - ["(?i)\\bannas[. ]archive\\b", 0.7]

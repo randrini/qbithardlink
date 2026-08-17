@@ -8,5 +8,5 @@ qb:
   password: "your-real-password"       # or set QB_PASS env var
 
 metadata:
-  flaresolverr_url: "http://192.168.1.116:8191"   # Byparr container
+  flaresolverr_url: "http://192.168.1.116:8192"   # preferred solver (Trawl/Byparr)
   google_books_api_key: ""                         # or set GOOGLE_BOOKS_API_KEY env var
