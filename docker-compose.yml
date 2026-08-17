@@ -12,7 +12,7 @@ services:
       - PGID=100
       - QB_URL=http://192.168.1.116:8084
       - QB_USER=bidalos
-      - QB_PASS=your-password
+      - QB_PASS=${QB_PASS:?Set QB_PASS in a .env file or export it before running docker compose up}
       - QB_SOURCE_CATEGORY=books
       - LIBRARY_ROOT=/data/media/books
       - HARDLINK_SCRIPT=/app/hardlink.sh
