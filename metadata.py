@@ -212,6 +212,9 @@ class Provider:
     #: content types this provider can resolve
     types = set()
     rate_limit = 1.0  # seconds between requests
+    #: If True, a single-vote result from this provider is not enough;
+    #: another independent provider must agree before we route to its category.
+    requires_corroboration = False
 
     def __init__(self):
         self._last = 0.0
@@ -456,6 +459,7 @@ class PlaneteBDProvider(Provider):
     display_name = "Planète BD"
     types = {"comic", "bd"}
     rate_limit = 2.5
+    requires_corroboration = True
 
     _BASE = "https://www.planetebd.com"
     _ALBUM_RE = re.compile(
@@ -554,6 +558,7 @@ class BedethequeProvider(Provider):
     display_name = "Bédéthèque"
     types = {"comic", "bd"}
     rate_limit = 2.0
+    requires_corroboration = True
 
     _BASE = "https://www.bedetheque.com"
 
@@ -849,34 +854,47 @@ def lookup_category(title, google_books_key=None):
         cat = FORMAT_TO_CATEGORY.get(cand["format"])
         if not cat:
             continue
+        cand["provider"] = p.id
         votes.setdefault(cat, []).append(p.id)
         cur = best_by_cat.get(cat)
         if cur is None or cand.get("confidence", 0) > cur.get("confidence", 0):
             best_by_cat[cat] = cand
-        # Early-exit: 2 independent providers agree → consensus reached.
+        # Early-exit: 2 independent providers agree -> consensus reached.
         if len(votes[cat]) >= 2:
             break
 
     if not votes:
         return None, 0.0, None, "no provider match"
 
-    # A category wins if >=2 providers agree on it, OR it's the only category
-    # any provider returned (single strong signal).
+    # A category wins if >=2 providers agree on it. If only one provider
+    # returned a category, accept it ONLY from fast public APIs that have a
+    # single-vote trust level. FlareSolverr-dependent providers (PlaneteBD,
+    # Bedetheque) can false-positive; they require a second provider to agree.
     best_cat = None
     best_count = 0
     for cat, ids in votes.items():
         if len(ids) >= 2:
             if len(ids) > best_count:
                 best_cat, best_count = cat, len(ids)
+
     if best_cat is None and len(votes) == 1:
-        best_cat = next(iter(votes))
+        cat = next(iter(votes))
+        cand = best_by_cat[cat]
+        provider_id = cand.get("provider")
+        provider_requires_corroboration = any(
+            pp.id == provider_id and pp.requires_corroboration for pp in providers
+        )
+        if not provider_requires_corroboration:
+            best_cat = cat
+        else:
+            return None, 0.0, None, f"{provider_id} single-vote; needs corroboration"
 
     if best_cat:
         cand = best_by_cat[best_cat]
         voters = votes[best_cat]
         conf = min(cand.get("confidence", 0.7) + 0.05 * (len(voters) - 1), 1.0)
         return best_cat, conf, "+".join(voters), cand.get("title")
-    # Disagreement with no 2-provider agreement → unresolved, tag for review
+    # Disagreement with no 2-provider agreement -> unresolved, tag for review
     return None, 0.0, None, f"providers disagree: {dict(votes)}"
 
 
