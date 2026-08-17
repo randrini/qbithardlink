@@ -167,28 +167,36 @@ def _tokens(text):
 def _title_similar(a, b, min_overlap=0.6):
     """True if the two titles match strongly enough.
 
-    Requires BOTH:
-      - token overlap >= min_overlap (relative to the shorter non-stopword set)
-      - at least one non-trivial (non-stopword) token is shared
+    Uses two safe strategies:
+      1. Short query (<=2 non-stop tokens): every query token must appear as a
+         whole word in the provider title. This lets "Chi" match
+         "Chi's Sweet Home" but not "Le chat".
+      2. Longer query: token overlap >= min_overlap relative to the shorter
+         non-stopword set.
 
-    This prevents false positives like "Bread A Baker s Book of Techniques"
-    matching PlanèteBD's "Baker Street" (only "baker" shared = weak) while
-    still accepting "The Savage Garden Cultivating Carnivorous Plants" →
+    This prevents false positives like "Chi Une vie de chat" matching
+    PlanèteBD's "Le chat T15" (only "chat" shared = weak) while still accepting
+    "The Savage Garden Cultivating Carnivorous Plants" →
     "The Savage Garden, Revised" (3 shared non-stop tokens = strong).
     """
     na, nb = _norm(a), _norm(b)
     if not na or not nb:
         return False
-    # Exact / substring containment (handles short titles like "Bread")
-    if na in nb or nb in na:
-        return True
     ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
         return False
+
+    # Strategy 1: short query -> require whole-word presence of every token.
+    if len(ta) <= 2:
+        nb_words = set(nb.split())
+        if all(t in nb_words for t in ta):
+            return True
+        return False
+
+    # Strategy 2: token overlap for longer titles.
     shared = ta & tb
     if not shared:
         return False
-    # Overlap relative to the shorter non-stopword token set
     return len(shared) / min(len(ta), len(tb)) >= min_overlap
 
 
@@ -732,11 +740,14 @@ def _publisher_match(publisher, known_set):
     return False
 
 
-def _disambiguate_book(cand):
-    """Refine a generic 'book' format using publisher/language/genres/title."""
+def _refine_format(cand):
+    """Refine a candidate format using publisher/language/genres/title context.
+
+    Google Books/OpenLibrary often return generic categories; this uses
+    publisher, language, and subject markers to correct them without
+    hardcoding series names.
+    """
     fmt = cand.get("format")
-    if fmt != "book":
-        return fmt
     title = str(cand.get("title") or "")
     publisher = str(cand.get("publisher") or "")
     language = str(cand.get("language") or "").lower()
@@ -745,22 +756,29 @@ def _disambiguate_book(cand):
     combined_norm = _norm_token(combined)
     tokens = set(combined_norm.split())
 
+    has_manga_marker = bool(tokens & _MANGA_MARKERS or _publisher_match(publisher, _MANGA_PUBLISHERS))
+    has_french = "fr" in language or "fre" in language or "french" in combined_norm
+    has_bd_marker = bool(tokens & _BD_MARKERS or _publisher_match(publisher, _FRENCH_BD_PUBLISHERS))
+    has_comic_marker = bool(tokens & _COMIC_MARKERS or _publisher_match(publisher, _US_COMIC_PUBLISHERS))
+
     # Manga/manhwa/webtoon take precedence (strong genre/subject signals)
-    if tokens & _MANGA_MARKERS or _publisher_match(publisher, _MANGA_PUBLISHERS):
+    if has_manga_marker:
         if "manhwa" in tokens or "webtoon" in tokens:
             return "webtoon"
         return "manga"
 
-    # French BD signals
-    if ("fr" in language or "fre" in language or "french" in combined_norm):
-        if tokens & _BD_MARKERS or _publisher_match(publisher, _FRENCH_BD_PUBLISHERS):
+    # If provider says "comic" but it's French + BD markers, it's likely a BD.
+    if fmt == "comic" and has_french and has_bd_marker and not has_comic_marker:
+        return "bd"
+
+    # Generic "book" disambiguation
+    if fmt == "book":
+        if has_french and has_bd_marker:
             return "bd"
+        if has_comic_marker:
+            return "comic"
 
-    # US comic signals
-    if tokens & _COMIC_MARKERS or _publisher_match(publisher, _US_COMIC_PUBLISHERS):
-        return "comic"
-
-    return "book"
+    return fmt
 
 
 #: format → qBittorrent category
@@ -817,7 +835,7 @@ def lookup_category(title, google_books_key=None):
         if not cand or not cand.get("format"):
             continue
         # Disambiguate generic "book" using publisher/language/genres.
-        cand["format"] = _disambiguate_book(cand)
+        cand["format"] = _refine_format(cand)
         cat = FORMAT_TO_CATEGORY.get(cand["format"])
         if not cat:
             continue
