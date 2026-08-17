@@ -1,0 +1,12 @@
+# Local overrides for config.yaml.
+# Copy this file to config.local.yaml and set your real secrets here.
+# config.local.yaml is git-ignored so it will never be pushed.
+
+qb:
+  url: "http://192.168.1.116:8084"
+  user: "bidalos"
+  password: "your-real-password"       # or set QB_PASS env var
+
+metadata:
+  flaresolverr_url: "http://192.168.1.116:8191"   # Byparr container
+  google_books_api_key: ""                         # or set GOOGLE_BOOKS_API_KEY env var

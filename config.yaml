@@ -1,6 +1,7 @@
 # qBittorrent category classifier — configuration
 # All settings are tunable here without editing code.
-# Secrets can be overridden via env vars (e.g. QB_PASS, GOOGLE_BOOKS_API_KEY).
+# Secrets can be overridden via env vars (e.g. QB_PASS, GOOGLE_BOOKS_API_KEY),
+# or by creating a git-ignored config.local.yaml file in this directory.
 
 # ── qBittorrent connection ────────────────────────────────────────────────
 qb:

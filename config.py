@@ -13,7 +13,9 @@ try:
 except Exception:
     HAS_YAML = False
 
-CONFIG_PATH = os.environ.get("CONFIG_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml"))
+_CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.environ.get("CONFIG_PATH", os.path.join(_CONFIG_DIR, "config.yaml"))
+LOCAL_CONFIG_PATH = os.environ.get("LOCAL_CONFIG_PATH", os.path.join(_CONFIG_DIR, "config.local.yaml"))
 
 #: Defaults used when config.yaml is missing or a key is absent.
 DEFAULTS = {
@@ -47,19 +49,25 @@ def _deep_merge(base, override):
     return out
 
 
-def load_config():
-    """Load config.yaml merged over DEFAULTS. Returns a dict."""
-    cfg = _deep_merge(DEFAULTS, {})
+def _load_yaml(path):
+    """Load one yaml file if it exists, return {} otherwise."""
     if not HAS_YAML:
-        return cfg
+        return {}
     try:
-        with open(CONFIG_PATH) as f:
-            user_cfg = yaml.safe_load(f) or {}  # noqa: F821 (guarded by HAS_YAML)
-        cfg = _deep_merge(cfg, user_cfg)
+        with open(path) as f:
+            return yaml.safe_load(f) or {}  # noqa: F821 (guarded by HAS_YAML)
     except FileNotFoundError:
-        pass
+        return {}
     except Exception as e:
-        print(f"warning: could not load {CONFIG_PATH}: {e}")
+        print(f"warning: could not load {path}: {e}")
+        return {}
+
+
+def load_config():
+    """Load config.yaml merged with config.local.yaml over DEFAULTS."""
+    cfg = _deep_merge(DEFAULTS, {})
+    cfg = _deep_merge(cfg, _load_yaml(CONFIG_PATH))
+    cfg = _deep_merge(cfg, _load_yaml(LOCAL_CONFIG_PATH))
     return cfg
 
 
