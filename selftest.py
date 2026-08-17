@@ -88,7 +88,7 @@ def run_against_qbittorrent(dry_run=True, category=None, limit=None, use_metadat
         r["size_mb"] = round((t.get("size") or 0) / 1048576, 1)
         report["results"].append(r)
 
-        if not dry_run and r["category"] != t.get("category"):
+        if not dry_run and r["category"] not in ("skip", t.get("category")):
             # Route torrent to predicted category, tag it as selftest
             qb.add_tags(t["hash"], "selftest")
             qb.set_category(t["hash"], r["category"])

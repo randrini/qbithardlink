@@ -101,8 +101,8 @@ def _flaresolverr_available():
     return _FLARESOLVERR_OK
 
 
-def _flaresolverr_get(url, max_timeout=20000):
-    """Fetch a URL through FlareSolverr (bypasses Cloudflare/anti-bot)."""
+def _flaresolverr_get(url, max_timeout=15000):
+    """Fetch a URL through FlareSolverr/Trawl (bypasses Cloudflare/anti-bot)."""
     if not HAS_REQUESTS:
         return None
     if not _flaresolverr_available():
@@ -111,7 +111,7 @@ def _flaresolverr_get(url, max_timeout=20000):
         resp = _requests.post(
             f"{FLARESOLVERR_URL}/v1",
             json={"cmd": "request.get", "url": url, "maxTimeout": max_timeout},
-            timeout=max_timeout / 1000 + 10,
+            timeout=max_timeout / 1000 + 5,
         )
         data = resp.json()
         if data.get("status") != "ok":
@@ -689,6 +689,80 @@ def _build_providers(google_books_key=None):
     return providers
 
 
+#: Known BD/comics/manga publishers/imprints used to disambiguate generic "book".
+_FRENCH_BD_PUBLISHERS = {
+    "glénat", "dupuis", "casterman", "le lombard", "dargaud", "delcourt",
+    "bamboo", "albin michel", "clair de lune", "soleil", "tonkam", "ki-oon",
+    "jungle", "vex", "paquet", "le triangle", "flblb", "bd kids",
+}
+_US_COMIC_PUBLISHERS = {
+    "marvel", "dc comics", "dc", "image comics", "dark horse comics",
+    "dark horse", "idw publishing", "idw", "boom! studios", "boom studios",
+    "vertigo", "wildstorm", "max", "icon", "valiant", "dynamite entertainment",
+}
+_MANGA_PUBLISHERS = {
+    "viz media", "kodansha comics", "kodansha", "yen press", "seven seas",
+    "tokyopop", "vertical", "denpa", "j-novel club", "sol press",
+}
+
+#: Strong French BD markers in title/genre text.
+_BD_MARKERS = {"tome", "bande dessinee", "bd", "franco belge", "integrale"}
+#: Strong manga/manhwa/webtoon markers.
+_MANGA_MARKERS = {"manga", "manhwa", "webtoon", "shonen", "shojo", "seinen", "josei"}
+#: Strong US comic markers.
+_COMIC_MARKERS = {"comic", "graphic novel", "superhero", "dc comics", "marvel comics"}
+
+
+def _norm_token(text):
+    return _norm(text).lower()
+
+
+def _publisher_tokens(publisher):
+    """Yield normalized publisher tokens from a string."""
+    if not publisher:
+        return
+    for part in re.split(r"[,;/&]|\band\b", str(publisher), flags=re.I):
+        yield _norm_token(part)
+
+
+def _publisher_match(publisher, known_set):
+    for tok in _publisher_tokens(publisher):
+        if tok in known_set:
+            return True
+    return False
+
+
+def _disambiguate_book(cand):
+    """Refine a generic 'book' format using publisher/language/genres/title."""
+    fmt = cand.get("format")
+    if fmt != "book":
+        return fmt
+    title = str(cand.get("title") or "")
+    publisher = str(cand.get("publisher") or "")
+    language = str(cand.get("language") or "").lower()
+    genres = " ".join(g.lower() for g in (cand.get("genres") or []))
+    combined = f"{title} {publisher} {genres}"
+    combined_norm = _norm_token(combined)
+    tokens = set(combined_norm.split())
+
+    # Manga/manhwa/webtoon take precedence (strong genre/subject signals)
+    if tokens & _MANGA_MARKERS or _publisher_match(publisher, _MANGA_PUBLISHERS):
+        if "manhwa" in tokens or "webtoon" in tokens:
+            return "webtoon"
+        return "manga"
+
+    # French BD signals
+    if ("fr" in language or "fre" in language or "french" in combined_norm):
+        if tokens & _BD_MARKERS or _publisher_match(publisher, _FRENCH_BD_PUBLISHERS):
+            return "bd"
+
+    # US comic signals
+    if tokens & _COMIC_MARKERS or _publisher_match(publisher, _US_COMIC_PUBLISHERS):
+        return "comic"
+
+    return "book"
+
+
 #: format → qBittorrent category
 FORMAT_TO_CATEGORY = {
     "manga": "manga",
@@ -742,6 +816,8 @@ def lookup_category(title, google_books_key=None):
         cand = _lookup_with_timeout(p, title, per_call_timeout)
         if not cand or not cand.get("format"):
             continue
+        # Disambiguate generic "book" using publisher/language/genres.
+        cand["format"] = _disambiguate_book(cand)
         cat = FORMAT_TO_CATEGORY.get(cand["format"])
         if not cat:
             continue

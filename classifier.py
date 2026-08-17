@@ -59,6 +59,20 @@ _JP_VOL_RE = re.compile(r"第\s*[0-9０-９]+\s*[巻号部]")
 # Japanese magazine names (weekly/monthly)
 _JP_MAG_RE = re.compile(r"(?:週刊|月刊|ビッグコミック|ヤングマガジン|少年|少女|ジャンプ|マガジン|サンデー|チャンピオン)")
 
+# ── Video/TV/movie skip detection ──────────────────────────────────────────
+# The daemon only processes "books" category torrents, but selftest.py may
+# analyze all. Skip obvious video releases instead of routing them to ebooks.
+_VIDEO_RE = re.compile(
+    r"(?i)\b(S\d{1,3}E\d{1,4}|S\d{1,3}\s+E\d{1,4}|\d{1,2}x\d{1,2}|\b\d{3,4}p\b|\b(?:720|1080|2160)p\b|"
+    r"x264|x265|HEVC|WEB[- ]?DL|WEB[- ]?Rip|BluRay|HDTV|HDRip|DVDRip|CAM|TS\b|"
+    r"XXX\b|Nubiles|New Sensations|HOTWIFE|porn|adult)"
+)
+
+
+def is_video(name):
+    """Return True if the release name is clearly a TV/movie/adult video."""
+    return bool(_VIDEO_RE.search(name))
+
 
 def normalize(name):
     """Release names use dots/underscores instead of spaces (Harley.Quinn).
@@ -130,6 +144,11 @@ def classify(name, tags=None, use_metadata=False):
     for tag in tags:
         if tag in TAG_OVERRIDES:
             return tag, 1.0, [f"manual tag override: {tag}"]
+
+    # 0.25 Skip obvious video/TV/movie/adult releases when run outside the
+    #    "books" category (e.g. selftest.py over all torrents).
+    if is_video(name):
+        return "skip", 0.0, ["video release: skip"]
 
     # 0.5 CJK characters → manga (very strong signal)
     if has_cjk(name):
@@ -245,6 +264,9 @@ def process_once(qb, use_metadata=False, state=None):
             continue
 
         cat, conf, reasons = classify(t.get("name", ""), t.get("tags", ""), use_metadata=use_metadata)
+        if cat == "skip":
+            # Non-book torrent that somehow landed in "books"; leave it untouched.
+            continue
         # Tag "review" when the cascade fell back to the default (low conf),
         # so the user can correct it. High-confidence results are auto-routed.
         if conf < 0.7:

@@ -91,16 +91,12 @@ rules:
       - ["(?i)\\bissue\\b", 0.9]
       - ["(?i)\\bweekly\\b", 0.8]
       - ["(?i)\\bI\\d{2,3}\\b", 0.8]
-      - ["(?i)\\bil sole 24 ore\\b", 1.0]
-      - ["(?i)\\bgazzetta\\b", 1.0]
-      - ["(?i)\\bcorriere\\b", 1.0]
       - ["(?i)\\bnewspaper\\b", 1.0]
       - ["(?i)\\bpresse\\b", 0.9]
   manga:
     min_score: 0.9
     patterns:
       - ["(?i)\\bmanga\\b", 1.0]
-      - ["(?i)\\bmanhwa\\b", 1.0]
       - ["(?i)\\bscanlation\\b", 0.9]
       - ["(?i)\\braw\\b", 0.8]
       - ["(?i)\\bdlraw\\b", 1.0]
