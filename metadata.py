@@ -167,12 +167,12 @@ def _tokens(text):
 def _title_similar(a, b, min_overlap=0.6):
     """True if the two titles match strongly enough.
 
-    Uses two safe strategies:
-      1. Short query (<=2 non-stop tokens): every query token must appear as a
-         whole word in the provider title. This lets "Chi" match
-         "Chi's Sweet Home" but not "Le chat".
-      2. Longer query: token overlap >= min_overlap relative to the shorter
-         non-stopword set.
+    Safe strategies:
+      1. Exact / substring containment (handles short titles like "Bread").
+      2. Short query (<=2 non-stop tokens): every query token must appear as a
+         whole word in the provider title.
+      3. Longer query: at least 2 shared non-stop tokens AND overlap
+         >= min_overlap relative to the shorter non-stopword set.
 
     This prevents false positives like "Chi Une vie de chat" matching
     PlanèteBD's "Le chat T15" (only "chat" shared = weak) while still accepting
@@ -182,20 +182,23 @@ def _title_similar(a, b, min_overlap=0.6):
     na, nb = _norm(a), _norm(b)
     if not na or not nb:
         return False
+
+    # Strategy 1: exact / substring containment.
+    if na == nb or na in nb or nb in na:
+        return True
+
     ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
         return False
 
-    # Strategy 1: short query -> require whole-word presence of every token.
+    # Strategy 2: short query -> require whole-word presence of every token.
     if len(ta) <= 2:
         nb_words = set(nb.split())
-        if all(t in nb_words for t in ta):
-            return True
-        return False
+        return all(t in nb_words for t in ta)
 
-    # Strategy 2: token overlap for longer titles.
+    # Strategy 3: token overlap for longer titles.
     shared = ta & tb
-    if not shared:
+    if len(shared) < 2:
         return False
     return len(shared) / min(len(ta), len(tb)) >= min_overlap
 
