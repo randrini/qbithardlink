@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Classifier runtime state
+.classifier_state.json
+
+# Logs
+*.log
+
+# Secrets — never commit real keys/passwords
+.env
+config.local.yaml
+
+# OS
+.DS_Store

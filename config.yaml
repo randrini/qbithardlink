@@ -1,0 +1,162 @@
+# qBittorrent category classifier — configuration
+# All settings are tunable here without editing code.
+# Secrets can be overridden via env vars (e.g. QB_PASS, GOOGLE_BOOKS_API_KEY).
+
+# ── qBittorrent connection ────────────────────────────────────────────────
+qb:
+  url: "http://192.168.1.116:8084"
+  user: "bidalos"
+  password: "your-password"   # or set QB_PASS env var
+
+# ── Polling ───────────────────────────────────────────────────────────────
+poll_interval: 10            # seconds between polls
+
+# ── Classification thresholds ─────────────────────────────────────────────
+# confidence >= auto_threshold  → auto-route (tag "classified")
+# confidence <  review_threshold → tag "review" (user should correct)
+thresholds:
+  auto: 0.90
+  review: 0.70
+
+# ── Default category when the whole cascade can't determine the type ───────
+default_category: "ebooks"
+
+# ── qBit tags that act as a manual override (highest priority) ─────────────
+# If a torrent carries one of these tags, it is routed to that category
+# without any metadata/regex lookup.
+tag_overrides:
+  manga: manga
+  manhwa: manhwa
+  webtoon: webtoon
+  comics: comics
+  bd: bd
+  light-novel: light-novel
+  ebooks: ebooks
+  mags: mags
+  audiobooks: audiobooks
+
+# ── Metadata providers ────────────────────────────────────────────────────
+# Enable/disable providers and set per-provider rate limits (seconds).
+# Keys can be set here or via env vars (GOOGLE_BOOKS_API_KEY).
+metadata:
+  enabled: true
+  flaresolverr_url: "http://10.0.0.42:8191"
+  google_books_api_key: ""    # or set GOOGLE_BOOKS_API_KEY env var
+  providers:
+    mangadex:
+      enabled: true
+      rate_limit: 0.25
+    kitsu:
+      enabled: true
+      rate_limit: 1.5
+    shikimori:
+      enabled: true
+      rate_limit: 0.75
+    openlibrary:
+      enabled: true
+      rate_limit: 1.1
+    googlebooks:
+      enabled: true
+      rate_limit: 1.0
+    planetebd:
+      enabled: true
+      rate_limit: 2.5
+    bedetheque:
+      enabled: true
+      rate_limit: 2.0
+
+# ── Regex rules (fast-path fallback when metadata is off/unavailable) ─────
+# Each category has a list of (regex, weight) patterns and a min_score.
+# The FIRST category whose total score >= min_score wins. Order matters.
+rules:
+  audiobooks:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\baudiobook\\b", 1.0]
+      - ["(?i)\\.m4b\\b", 1.0]
+      - ["(?i)\\[m4b\\]", 1.0]
+      - ["(?i)\\baac\\b", 0.9]
+      - ["(?i)\\bkbps\\b", 0.9]
+      - ["(?i)\\bmp3\\b", 0.8]
+  mags:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bmagazine\\b", 1.0]
+      - ["(?i)\\be?book[- ]magazine\\b", 1.0]
+      - ["(?i)\\be?book[- ]p?ro\\b", 0.9]
+      - ["(?i)\\bjournaux\\b", 1.0]
+      - ["(?i)\\bpack\\.?journaux\\b", 1.0]
+      - ["(?i)\\bissue\\b", 0.9]
+      - ["(?i)\\bweekly\\b", 0.8]
+      - ["(?i)\\bI\\d{2,3}\\b", 0.8]
+      - ["(?i)\\bil sole 24 ore\\b", 1.0]
+      - ["(?i)\\bgazzetta\\b", 1.0]
+      - ["(?i)\\bcorriere\\b", 1.0]
+      - ["(?i)\\bnewspaper\\b", 1.0]
+      - ["(?i)\\bpresse\\b", 0.9]
+  manga:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bmanga\\b", 1.0]
+      - ["(?i)\\bmanhwa\\b", 1.0]
+      - ["(?i)\\bscanlation\\b", 0.9]
+      - ["(?i)\\braw\\b", 0.8]
+      - ["(?i)\\bdlraw\\b", 1.0]
+      - ["(?i)\\b13dl\\b", 1.0]
+      - ["(?i)\\bmanga[- ]zip\\b", 1.0]
+      - ["(?i)\\bviz media\\b", 1.0]
+      - ["(?i)\\bhybrid manga\\b", 1.0]
+      - ["(?i)\\bT\\d{2}\\b", 0.7]
+      - ["(?i)\\b[0-9]{4}\\b.*\\bvol\\.?\\s*\\d+\\b", 0.3]
+  manhwa:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bmanhwa\\b", 1.0]
+      - ["(?i)\\bkorean\\b", 0.8]
+      - ["(?i)\\bwebtoon\\b", 0.9]
+  comics:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bdc comics\\b", 1.0]
+      - ["(?i)\\bdetective comics\\b", 1.0]
+      - ["(?i)\\bbatman\\b", 1.0]
+      - ["(?i)\\bsuperman\\b", 1.0]
+      - ["(?i)\\bwonder woman\\b", 1.0]
+      - ["(?i)\\bharley quinn\\b", 1.0]
+      - ["(?i)\\bx[- ]?men\\b", 1.0]
+      - ["(?i)\\bswamp thing\\b", 1.0]
+      - ["(?i)\\bmarvel\\b", 1.0]
+      - ["(?i)\\bdc\\b", 0.8]
+      - ["(?i)\\bannual\\b", 0.8]
+      - ["(?i)\\bgraphic novel\\b", 0.9]
+      - ["(?i)\\bcomic\\b", 0.8]
+  bd:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bglenat\\b", 1.0]
+      - ["(?i)\\bdupuis\\b", 1.0]
+      - ["(?i)\\bcasterman\\b", 1.0]
+      - ["(?i)\\blombard\\b", 1.0]
+      - ["(?i)\\bdargaud\\b", 1.0]
+      - ["(?i)\\bdelcourt\\b", 1.0]
+      - ["(?i)\\bbamboo\\b", 1.0]
+      - ["(?i)\\balbin[- ]michel\\b", 1.0]
+      - ["(?i)\\bclair[- ]de[- ]lune\\b", 1.0]
+      - ["(?i)\\bsoleil\\b", 0.8]
+      - ["(?i)\\bbande dessin", 1.0]
+      - ["(?i)\\bfranco[- ]belge\\b", 1.0]
+      - ["(?i)\\b\\[?bd\\]?\\b", 0.7]
+      - ["(?i)\\b\\[?int?egrale\\]?\\b", 0.5]
+      - ["(?i)\\b\\[?collection\\]?\\b", 0.5]
+      - ["(?i)\\b\\[?tome\\]?\\b", 0.4]
+      - ["(?i)\\[cbr\\]", 0.6]
+      - ["(?i)\\[cbz\\]", 0.6]
+  light-novel:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\blight[- ]novel\\b", 1.0]
+      - ["(?i)\\bln\\b", 0.6]
+      - ["(?i)\\bpart\\s*\\d+\\b", 0.6]
+      - ["(?i)\\btome\\b", 0.9]
+      - ["(?i)\\bvol\\.?\\s*\\d+\\b", 0.4]
+      - ["(?i)\\bannas[. ]archive\\b", 0.7]

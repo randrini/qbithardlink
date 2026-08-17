@@ -1,0 +1,24 @@
+# qBittorrent category classifier — Docker Compose
+# Build & run:  docker compose up -d --build
+# The classifier watches qBittorrent for "books" torrents and sets the category.
+# Uses FlareSolverr (http://10.0.0.42:8191) to bypass anti-bot on BD providers.
+services:
+  classifier:
+    build: .
+    container_name: qbit-classifier
+    restart: unless-stopped
+    environment:
+      - QB_URL=http://192.168.1.116:8084
+      - QB_USER=bidalos
+      - QB_PASS=your-password
+      - POLL_INTERVAL=10
+      # FlareSolverr endpoint for Cloudflare/anti-bot protected BD providers
+      - FLARESOLVERR_URL=http://10.0.0.42:8191
+      # Google Books API key (improves ebook/comic/manga resolution)
+      # Set via .env or export — do NOT commit a real key here.
+      - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
+    volumes:
+      - ./classifier.py:/app/classifier.py:ro
+      - ./metadata.py:/app/metadata.py:ro
+      - ./config.py:/app/config.py:ro
+      - ./config.yaml:/app/config.yaml:ro

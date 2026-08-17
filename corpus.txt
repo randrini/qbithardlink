@@ -1,0 +1,130 @@
+# Real-world release corpus from treasure-maps.com / YGG-style indexers.
+# Format: <true_category> | <release_name>
+# Used to validate the classifier rules.
+
+# ── Manga (Japanese) ──────────────────────────────────────────────────────
+manga | Dogsred.T05.Satoru.Noda.2025.FR.[CBZ]-NOTAG
+manga | Dogsred.T04.Satoru.Noda.2025.FR.[CBZ]-NOTAG
+manga | [朝際イコ] カフヱーピウパリア 第02巻
+manga | [KASA] BREAK BACK 第25巻
+manga | [みかみてれん×千種みのり] ガールズ×ヴァンパイア 第01巻
+manga | DLRAW APP Zange raw vol 01-07
+manga | 13DL APP Nogarebana v01-06
+manga | MANGA-ZIP APP Shi Rakuna Kaiki Shinrei Kembun vol 01-02
+manga | ジョジョの奇妙な冒険 第1部 カラー版 01-05 [aKraa]
+manga | 週刊ビッグコミックスピリッツ 2026年38号
+manga | ヤングマガジン 2026年38号
+manga | VIZ Media - Yona Of The Dawn Vol 05 2017 HYBRID MANGA eBook-21A1
+manga | VIZ Media - Yona Of The Dawn Vol 24 2020 HYBRID MANGA eBook-21A1
+manga | VIZ Media - Sleepy Princess In The Demon Castle Vol 20 2023 HYBRID MANGA eBook-21A1
+manga | 13DL APP Cardcaptor Sakura Clear Card Arc vol 01-16
+manga | 13DL APP Danjon ni deai Episode fureiya vol 01-05
+manga | MANGA-ZIP APP Shokubutsu monsutamusume nikki vol 01-05
+manga | MANGA-ZIP APP Mata Korosareteshimatta Nodesu vol 01-02
+manga | 13DL APP Monsuta no Amai Kiba vol01-15
+manga | DLRAW APP Hakobi no inu vol 01-15
+manga | Gorillaman
+
+# ── Comics (US/English) ───────────────────────────────────────────────────
+comics | Harley.Quinn.[TO1.TO26].Amanda.Conner.2016.FR.[CBR]-NOTAG
+comics | Superman.Annual.[TO1].2016.FR.[CBR]-NOTAG
+comics | Wonder.Woman.Annual.[TO2.TO4].James.Robinson.2018.FR.[CBR]-NOTAG
+comics | Swamp.Thing.Bernie.Wrightson.Len.Wein.1971.FR.[PDF]-NOTAG
+comics | DC.Titans.Annual.[TO1.TO2].Dan.Abnett.2017.FR.[CBR]-NOTAG
+comics | Detective.Comics.Annual.[TO1.TO3].2020.FR.[CBR]-NOTAG
+comics | Batman.Annual.[TO1.TO5].2016.FR.[CBR]-NOTAG
+comics | XMen.La.Chute.De.LEmpire.Shiar.Ed.Brubaker.2017.FR.[CBR]-NOTAG
+comics | Swamp.Thing.1971.SCAN.eBOOK
+
+# ── BD (Franco-Belgian) ──────────────────────────────────────────────────
+bd | De.Memoire.Corbeyran.Winoc.FR.[PDF]-NOTAG
+bd | Le.Dahlia.Noir.Fincher.Hyman.FR.[PDF]-NOTAG
+bd | Fabien.M.Stalner.[INTEGRALE].FR.[PDF]-NOTAG
+bd | Face.Au.Mur.Astier.[INTEGRALE].FR.[PDF]-NOTAG
+bd | Woman.On.The.River.OS.Schultheiss.FR.[CBR]-NOTAG
+bd | La.Sagesse.Des.Mythes.Contes.Legendes.Collectif.[COLLECTION].FR.[CBZ]-NOTAG
+bd | Agence.Barbare.Olivier.Gilleron.[INTEGRALE].2003.FR.[PDF]-notag
+bd | Dictionnaire.Mondial.De.La.BD.2010.fr.[cbr]-NoTag
+bd | La.Tour.Sombre.BD.T09.2008.FR.[PDF]-NOTAG
+bd | Renaud.Né sous le signe de l'Hexagone.Bertrand.Dicale.2023.FR.[PDF]-notag
+bd | Le.Coeur.En.Braille.Joris.Chamblain.BD.[PDF]+[CBZ]-NoTag
+bd | Manara.Demain.L.Apocalypse.Glenat.2015.FRENCH.SCAN.CBR.eBOOK-Notag
+bd | Herval.Droles.De.Pin.Up.Bamboo.2004.FRENCH.SCAN.CBR.eBOOK-Notag
+bd | Manara.Piranese.Albin.Michel.2002.FRENCH.SCAN.CBR.eBOOK-Notag
+bd | Manunta.La.Fleur.D.Irlande.Clair.De.Lune.2007.FRENCH.SCAN.CBZ.eBOOK-Notag
+bd | Rollin.Chloe.Arrive.En.Ville.Glenat.2009.FRENCH.SCAN.CBR.eBOOK-Notag
+bd | Schultheiss.Woman.On.The.River.Glenat.2012.FRENCH.SCAN.CBR.eBOOK-Notag
+bd | Collectif.La.Sagesse.Des.Mythes.Contes.Et.Legendes.Glenat.1.53.2023.FRENCH.SCAN.CBZ.eBOOK-Notag
+
+# ── Ebook (Livres / prose / non-fiction) ──────────────────────────────────
+ebooks | Techniques.Et.Strategies.De.Day.Trading.Et.De.Swing.Trading.Olivier.Seban.2003.FR.[EPUB]-TRADEME
+ebooks | Cryptomonnaie.nue.Paul.Le.Grand.2021.FR.[EPUB]-TRADEME
+ebooks | La.trilogie.du.rempart.sud.Jeff.Vandermeer.[INTEGRALE].FR.[EPUB]-NOTAG
+ebooks | Pack.6.Marklund.Lisa.FR.[EPUB]-NOTAG
+ebooks | College.Urologie.6eme.edition.FRENCH.[PDF]-AmisMed
+ebooks | Dublin.Murder.Squad.Tana.French.[INTEGRALE].FR.[EPUB]-NOTAG
+ebooks | Guide.Berlin.2026.2027.Petit.Fute.Dominique.Auzias.Jean.Paul.Labourdette.2026.FR.[EPUB]-NOTAG
+ebooks | La.Veritable.Histoire.De.Rosie.Catherine.Mallaval.2019.FR.[EPUB]-NOTAG
+ebooks | Reparez.vous.meme.vos.appareils.electroniques.Jean.Boyer.2025.FR.[Epub]-NOTAG
+ebooks | Placebo.Richard.Monvoisin.Leo.Druart.Nicolas.Pinsault.2026.FR.[EPUB]-NOTAG
+ebooks | Guide.Iles.Grecques.2026.2027.Petit.Fute.Dominique.Auzias.Jean.Paul.Labourdette.2026.FR.[EPUB]-NOTAG
+ebooks | Guide.Maroc.2026.Carnet.Petit.Futé.Dominique.Auzias.FR.[Epub]-NOTAG
+ebooks | Guide.Baviere.2026.2027.Petit.Fute.Dominique.Auzias.Jean.Paul.Labourdette.2026.FR.[EPUB]-NOTAG
+ebooks | Guide.Alpes.2026.Petit.Fute.Dominique.Auzias.FR.[Epub]-NOTAG
+ebooks | Guide.Bretagne.Loire.Atlantique.2026.Petit.Futé.Dominique.Auzias.FR.[Epub]-NOTAG
+ebooks | Guide.Indonesie.2026.Carnet.Petit.Fute.FR.[Epub]-NOTAG
+ebooks | Etat.Du.Monde.2026.Géopolitique.du.monde.contemporain.FR.[EPUB]-NOTAG
+ebooks | The.Empyrean.Fourth.Wing.T1.5.Chapitres.Bonus.Rebecca.Yarros.2024.FR.[EPUB]-NOTAG
+ebooks | Reparer.Son.Electro.Menager.et.ses.Autres.Appareils.Electriques.Jean.Boyer.2022.Fr.[EPUB]-kop1
+ebooks | Filmer.et.Photographier.Avec.un.Drone.Eric.De.Keyser.2017.Fr.[EPUB]-kop1
+ebooks | Les.Drones.Fonctionnement.Telepilotage.Applications.Reglementation.Rodolphe.Jobard.2017.Fr.[EPUB]-kop1
+ebooks | L'Interdépendance.John.Scalzi.[INTEGRALE].FR.[EPUB]-NOTAG
+ebooks | Comment.Dire.Aux.Gens.Daller.Se.Faire.Foutre.Poliment.Alba.Cardalda.2026.FR.[EPUB]-NOTAG
+ebooks | Le.Petit.Menteur.Mitch.Albom.FR.[Epub]-NoTag
+ebooks | Le.Forex.Pour.Les.Debutants.Ambitieux.Peters.J.Odyssea.2016.FR.[PDF]-TRADEME
+ebooks | Le.Crepuscule.De.La.Veuve.Blanche.Cyril.Carrere.FR.[Epub]-NoTag
+ebooks | TJ Alexander - Chefs Choice 2023 RETAIL EPUB eBook-CTO
+ebooks | Freya Marske - Swordcrossed 2024 RETAIL EPUB eBook-CTO
+ebooks | Matt Baume - Hi Honey Im Homo 2023 RETAIL EPUB eBook-CTO
+ebooks | Al Hess - Key Lime Sky 2024 RETAIL EPUB eBook-CTO
+ebooks | Amy Schneider - Who Is Amy Schneider 2025 RETAIL EPUB eBook-CTO
+ebooks | Kike Arnal - Bordered Lives Transgender Portraits From Mexico 2015 RETAIL EPUB eBook-CTO
+ebooks | Justinian Huang - Lucky Seed 2025 RETAIL EPUB eBook-CTO
+ebooks | Susan Stryker - Transgender History 3rd Edition 2026 RETAIL EPUB eBook-CTO
+ebooks | Elizabeth Bear And Katherine Addison - The Cobblers Boy 2018 RETAIL EPUB eBook-CTO
+ebooks | Emma Bull - Finder 2012 RETAIL EPUB eBook-CTO
+ebooks | Erewhon Books - Amplitudes Stories Of Queer And Trans Futurity 2025 RETAIL EPUB eBook-CTO
+ebooks | Tor Publishing Group - Some Of The Best From Tor Com 2012 Edition 2013 RETAIL EPUB eBook-CTO
+ebooks | The Savage Garden Cultivating Carnivorous Plants
+ebooks | Visualizing Nutrition Everyday Choices 5ed
+ebooks | Bread A Baker s Book of Techniques and Recipes
+ebooks | Building Your Own PC Complete Manual - 15th Edition 2026
+ebooks | David W Oxtoby H P Gillis Alan Campion Principles of Modern Chemistry 7th Edition 2011 ENGLISH RETAIL PDF eBook
+
+# ── Light Novel ───────────────────────────────────────────────────────────
+light-novel | Ascendance of a Bookworm - Part 05 Vol 01
+light-novel | Le.Halo.des.Ombres.tome.3.2024.Web.eBOOK
+light-novel | Viviane.et.Celine.De.Clairval.Le.Halo.des.Ombres.Pyrelion.1.2024.FRENCH.Annas.archive.eBOOK
+
+# ── Mags / Newspapers ────────────────────────────────────────────────────
+mags | Britain at War - Issue 232, August 2026
+mags | Weekly World Car Info I33 2026
+mags | Il Sole 24 Ore 2026 08.17 iTALiAN HYBRiD eBook-iDiB
+mags | La Gazzetta Dello Sport 08.17 2026 iTALiAN RETAiL eBook-DiVER
+mags | Il Corriere Della Sera 08.17 2026 iTALiAN RETAiL eBook-DiVER
+mags | Magazines.du.16.Aout.2026.2026.FRENCH.RETAiL.PDF.eBOOK-pRO
+mags | Journaux.Weekend.et.Hippique.15.Aout.2026.FRENCH.RETAiL.PDF.eBOOK-Pro
+mags | Pack.Journaux.Nationaux.17.Aout.2026.FRENCH.RETAiL.PDF.eBOOK-NoTag
+mags | AK.Interactive.Extreme.Reality.2015.ENGLISH.RETAiL.PDF.eBOOK-Magazine
+mags | AK.Interactive.METALLICS.Vol2.Figures.2016.ENGLISH.RETAiL.PDF.eBOOK-Magazine
+mags | AMMO.The.Weathering.Aircraft.Messerschmitt.Bf.109.2024.ENGLISH.RETAiL.PDF.eBOOK-MAGAZINE
+
+# ── Audiobook ─────────────────────────────────────────────────────────────
+audiobooks | Myriam.Caillonneau.Abri.19.2019.FR.AUDIOBOOK.M4B-PiXeL
+audiobooks | Dan.Simmons.Hypérion.tome.4.L'Éveil.d'Endymion.2018.FR.AAC.129kbps.M4B-RACHE
+audiobooks | Dan.Simmons.Hypérion.tome.3.Endymion.2017.FR.AAC.128kbps.M4B-RACHE
+audiobooks | S.D.Fischer.La.demoiselle.et.le.mousquetaire.T06.L.assassin.De.L.avent.2026.FR.AUDIOBOOK.M4B-PiXeL
+audiobooks | Veronica.Roth.Divergente.tome.3.Au-dela.du.mur.2026.FR.AAC.128kbps.M4B-RACHE
+audiobooks | Haruki.Murakami.Le.Meurtre.du.Commandeur.partie.2.2019.FR.AAC.127kbps.M4B-RACHE
+audiobooks | René.Barjavel.Ravage.2022.FR.AAC.128kbps.M4B-RACHE
+audiobooks | Ada.Palmer.Terra.Ignota.tome.1.Trop.semblable.à.l'éclair.2022.FR.AAC.128kbps.M4B-RACHE
