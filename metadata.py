@@ -172,12 +172,14 @@ def _title_similar(a, b, min_overlap=0.6):
       2. Short query (<=2 non-stop tokens): every query token must appear as a
          whole word in the provider title.
       3. Longer query: at least 2 shared non-stop tokens AND overlap
-         >= min_overlap relative to the shorter non-stopword set.
+         >= min_overlap relative to the QUERY token set.
 
-    This prevents false positives like "Chi Une vie de chat" matching
-    PlanèteBD's "Le chat T15" (only "chat" shared = weak) while still accepting
-    "The Savage Garden Cultivating Carnivorous Plants" →
-    "The Savage Garden, Revised" (3 shared non-stop tokens = strong).
+    Requiring overlap relative to the query (not the shorter side) stops
+    provider results with very few tokens from falsely matching: "Chi Une vie
+    de chat" vs PlanèteBD's "Le chat T15" shares only "chat", which is 1/3 of
+    the query tokens (too weak). Real matches like "The Savage Garden
+    Cultivating Carnivorous Plants" -> "The Savage Garden, Revised" share 2/4
+    of the query tokens.
     """
     na, nb = _norm(a), _norm(b)
     if not na or not nb:
@@ -196,11 +198,11 @@ def _title_similar(a, b, min_overlap=0.6):
         nb_words = set(nb.split())
         return all(t in nb_words for t in ta)
 
-    # Strategy 3: token overlap for longer titles.
+    # Strategy 3: token overlap relative to the query token set.
     shared = ta & tb
     if len(shared) < 2:
         return False
-    return len(shared) / min(len(ta), len(tb)) >= min_overlap
+    return len(shared) / len(ta) >= min_overlap
 
 
 # ── Provider base ─────────────────────────────────────────────────────────
@@ -511,8 +513,13 @@ class PlaneteBDProvider(Provider):
             h1 = dsoup.find("h1")
             fetched_title = h1.get_text(" ", strip=True) if h1 else best["label"]
 
-            # format: /bd/ → bd (Franco-Belgian), /comics/ → comics (US)
-            fmt = "bd" if best["kind"] == "bd" else "comic"
+            # format from path: /bd/ → bd, /comics/ → comic, /mangas/ → manga
+            if best["kind"] == "bd":
+                fmt = "bd"
+            elif best["kind"] == "mangas":
+                fmt = "manga"
+            else:
+                fmt = "comic"
 
             # publisher from "bd chez <publisher> de ..."
             publisher = None
