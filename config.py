@@ -32,6 +32,7 @@ DEFAULTS = {
         "enabled": True,
         "flaresolverr_url": "http://10.0.0.42:8191",
         "google_books_api_key": "",
+        "comicvine_api_key": "",
         "providers": {},
     },
     "rules": {},
@@ -86,6 +87,8 @@ def _env_override(cfg):
         cfg["metadata"]["flaresolverr_url"] = os.environ["FLARESOLVERR_URL"]
     if os.environ.get("GOOGLE_BOOKS_API_KEY"):
         cfg["metadata"]["google_books_api_key"] = os.environ["GOOGLE_BOOKS_API_KEY"]
+    if os.environ.get("COMICVINE_API_KEY"):
+        cfg["metadata"]["comicvine_api_key"] = os.environ["COMICVINE_API_KEY"]
     return cfg
 
 

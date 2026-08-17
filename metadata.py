@@ -54,6 +54,9 @@ FLARESOLVERR_URL = os.environ.get("FLARESOLVERR_URL", "http://10.0.0.42:8191")
 # Google Books API key (optional; improves ebook/comic/manga resolution)
 GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "").strip()
 
+# ComicVine API key (required for ComicVineProvider)
+COMICVINE_API_KEY = os.environ.get("COMICVINE_API_KEY", "").strip()
+
 # Provider enable/disable + rate limits from config.yaml
 try:
     import config as _cfg
@@ -63,6 +66,8 @@ try:
         FLARESOLVERR_URL = _cfg.get("metadata.flaresolverr_url")
     if _cfg.get("metadata.google_books_api_key"):
         GOOGLE_BOOKS_API_KEY = _cfg.get("metadata.google_books_api_key")
+    if _cfg.get("metadata.comicvine_api_key"):
+        COMICVINE_API_KEY = _cfg.get("metadata.comicvine_api_key")
 except Exception:
     _PROVIDER_SETTINGS = {}
     _META_ENABLED = True
@@ -352,6 +357,80 @@ class ShikimoriProvider(Provider):
             return None
 
 
+class MangaBakaProvider(Provider):
+    """MangaBaka V2 API — free, no key. Fast manga/manhwa/webtoon/novel search.
+
+    Endpoint: https://api.mangabaka.org/v2/series/search?q=...&schema=full
+    Format comes from the `type` field (MANGA/MANHWA/WEBTOON/NOVEL), with a
+    tag/genre fallback for manhwa/webtoon.
+    """
+    id = "MANGABAKA"
+    display_name = "MangaBaka"
+    types = {"manga", "webtoon", "light_novel"}
+    rate_limit = 2.25  # MangaBaka search quota is 30/min
+
+    def lookup(self, title):
+        self._throttle()
+        try:
+            url = "https://api.mangabaka.org/v2/series/search"
+            params = {"q": title, "schema": "full"}
+            data = _http_get_json(url, params=params)
+            items = data.get("data") if isinstance(data, dict) else data
+            if not isinstance(items, list) or not items:
+                return None
+            best = items[0]
+            if not isinstance(best, dict):
+                return None
+            t = best.get("name") or best.get("title")
+            if not t or not _title_similar(t, title):
+                return None
+
+            # Format from `type` field, with tag/genre fallback.
+            mb_type = str(best.get("type", "")).upper()
+            if "MANHWA" in mb_type or "WEBTOON" in mb_type:
+                fmt = "webtoon"
+            elif "NOVEL" in mb_type:
+                fmt = "light_novel"
+            elif "MANGA" in mb_type:
+                fmt = "manga"
+            else:
+                tags = " ".join(str(x) for x in (best.get("tags") or [])).upper()
+                genres = " ".join(str(x) for x in (best.get("genres") or [])).upper()
+                if "MANHWA" in tags or "WEBTOON" in tags or "MANHWA" in genres or "WEBTOON" in genres:
+                    fmt = "webtoon"
+                else:
+                    fmt = "manga"
+
+            # Publisher: prefer localized edition, fall back to original.
+            publisher = None
+            for pub in best.get("publishers") or []:
+                if isinstance(pub, dict) and pub.get("name"):
+                    p_type = str(pub.get("type", "")).lower()
+                    if "original" not in p_type and "ja" not in p_type:
+                        publisher = pub["name"].strip()
+                        break
+            if not publisher:
+                for pub in best.get("publishers") or []:
+                    if isinstance(pub, dict) and pub.get("name"):
+                        publisher = pub["name"].strip()
+                        break
+
+            genres_list = []
+            for g in best.get("genres") or []:
+                if isinstance(g, dict) and g.get("name"):
+                    genres_list.append(g["name"])
+                elif isinstance(g, str) and g.strip():
+                    genres_list.append(g.strip())
+
+            return self._candidate(
+                title=t, format=fmt, publisher=publisher,
+                genres=genres_list, confidence=0.9,
+            )
+        except Exception as e:
+            log.debug("MangaBaka lookup failed: %s", e)
+            return None
+
+
 # ════════════════════════════════════════════════════════════════════════
 # EBOOK providers
 # ════════════════════════════════════════════════════════════════════════
@@ -633,6 +712,143 @@ class BedethequeProvider(Provider):
             return None
 
 
+class ComicVineProvider(Provider):
+    """ComicVine API — US comics (requires COMICVINE_API_KEY). format=comic.
+
+    Endpoint: https://comicvine.gamespot.com/api/volumes/?filter=name:...
+    ComicVine's catalog is US-centric; a single-vote result is not trusted
+    (requires_corroboration) to avoid false positives on homonyms.
+    """
+    id = "COMICVINE"
+    display_name = "ComicVine"
+    types = {"comic"}
+    rate_limit = 1.2
+    requires_corroboration = True
+
+    def __init__(self, api_key=None):
+        super().__init__()
+        self.api_key = api_key
+
+    def lookup(self, title):
+        api_key = str(self.api_key or COMICVINE_API_KEY or "").strip()
+        if not api_key:
+            return None
+        self._throttle()
+        try:
+            url = "https://comicvine.gamespot.com/api/volumes/"
+            params = {
+                "api_key": api_key,
+                "format": "json",
+                "filter": f"name:{title}",
+                "limit": 20,
+                "field_list": "id,name,start_year,count_of_issues,publisher",
+            }
+            data = _http_get_json(url, params=params)
+            if data.get("status_code") != 1:
+                log.debug("ComicVine API error: %s", data.get("error"))
+                return None
+            results = data.get("results") or []
+            if not results:
+                return None
+            best = results[0]
+            t = best.get("name")
+            if not t or not _title_similar(t, title):
+                return None
+            pub = best.get("publisher") or {}
+            publisher = pub.get("name") if isinstance(pub, dict) else None
+            year = best.get("start_year")
+            return self._candidate(
+                title=t, format="comic", publisher=publisher,
+                country="US", year=int(year) if str(year).isdigit() else None,
+                confidence=0.9,
+            )
+        except Exception as e:
+            log.debug("ComicVine lookup failed: %s", e)
+            return None
+
+
+class BDthequeProvider(Provider):
+    """BDTheque.com — Franco-Belgian comics (HTML via FlareSolverr). format=bd.
+
+    Search via AJAX typeahead: GET /ajax/search/series/{query} (JSON list),
+    then fetch the series page /series/{id}/{slug} for the title/publisher.
+    """
+    id = "BDTHEQUE"
+    display_name = "BDTheque"
+    types = {"comic", "bd"}
+    rate_limit = 2.2
+    requires_corroboration = True
+
+    _BASE = "https://www.bdtheque.com"
+
+    def lookup(self, title):
+        if not HAS_BS4:
+            return None
+        self._throttle()
+        try:
+            # 1. AJAX typeahead search (returns a JSON list of series)
+            search_url = f"{self._BASE}/ajax/search/series/{urllib.parse.quote(title.strip(), safe='')}"
+            html = _flaresolverr_get(search_url)
+            if not html:
+                return None
+            try:
+                hits = json.loads(html)
+            except Exception:
+                return None
+            if not isinstance(hits, list):
+                return None
+            hits = [h for h in hits if isinstance(h, dict) and h.get("id")]
+            if not hits:
+                return None
+
+            # 2. Pick best hit by title similarity (nom / nomvo).
+            best = None
+            for h in hits:
+                for key in ("nom", "nomvo"):
+                    n = h.get(key)
+                    if n and _title_similar(n, title):
+                        best = h
+                        break
+                if best:
+                    break
+            if not best:
+                return None
+
+            # 3. Fetch series detail page
+            series_url = f"{self._BASE}/series/{best['id']}"
+            detail_html = _flaresolverr_get(series_url)
+            if not detail_html:
+                return None
+            dsoup = BeautifulSoup(detail_html, "html.parser")
+
+            h1 = dsoup.find("h1")
+            fetched_title = h1.get_text(" ", strip=True) if h1 else (best.get("nom") or title)
+
+            publisher = None
+            for tr in dsoup.select("table.table-sm tr"):
+                cells = tr.find_all("td")
+                if len(cells) < 2:
+                    continue
+                label = cells[0].get_text(" ", strip=True).lower()
+                if "editeur" in label or "éditeur" in label:
+                    links = [a.get_text(strip=True) for a in cells[1].find_all("a")]
+                    publisher = (links[0] if links else cells[1].get_text(" ", strip=True).split("/")[0].strip())
+                    break
+
+            year = None
+            m = re.search(r"\b(19|20)\d{2}\b", detail_html)
+            if m:
+                year = int(m.group(0))
+
+            return self._candidate(
+                title=fetched_title, format="bd", publisher=publisher,
+                country="FR", year=year, confidence=0.9,
+            )
+        except Exception as e:
+            log.debug("BDtheque lookup failed: %s", e)
+            return None
+
+
 # ════════════════════════════════════════════════════════════════════════
 # LIGHT NOVEL providers
 # ════════════════════════════════════════════════════════════════════════
@@ -666,7 +882,7 @@ def _provider_rate_limit(pid, default):
     return float(s.get("rate_limit", default))
 
 
-def _build_providers(google_books_key=None):
+def _build_providers(google_books_key=None, comicvine_key=None):
     """Build provider list ordered by speed / reliability.
 
     Fast no-key API providers go first so that lookup_category can reach a 2-provider
@@ -678,6 +894,10 @@ def _build_providers(google_books_key=None):
     if _provider_enabled("mangadex"):
         p = MangaDexProvider()
         p.rate_limit = _provider_rate_limit("mangadex", p.rate_limit)
+        providers.append(p)
+    if _provider_enabled("mangabaka"):
+        p = MangaBakaProvider()
+        p.rate_limit = _provider_rate_limit("mangabaka", p.rate_limit)
         providers.append(p)
 
     # 2. Ebooks — fast, public APIs
@@ -700,7 +920,13 @@ def _build_providers(google_books_key=None):
         p.rate_limit = _provider_rate_limit("kitsu", p.rate_limit)
         providers.append(p)
 
-    # 4. BD / comics — require FlareSolverr (JS rendering)
+    # 4. Comics — public API, needs key
+    if _provider_enabled("comicvine"):
+        p = ComicVineProvider(comicvine_key)
+        p.rate_limit = _provider_rate_limit("comicvine", p.rate_limit)
+        providers.append(p)
+
+    # 5. BD / comics — require FlareSolverr (JS rendering)
     if _provider_enabled("planetebd"):
         p = PlaneteBDProvider()
         p.rate_limit = _provider_rate_limit("planetebd", p.rate_limit)
@@ -708,6 +934,10 @@ def _build_providers(google_books_key=None):
     if _provider_enabled("bedetheque"):
         p = BedethequeProvider()
         p.rate_limit = _provider_rate_limit("bedetheque", p.rate_limit)
+        providers.append(p)
+    if _provider_enabled("bdtheque"):
+        p = BDthequeProvider()
+        p.rate_limit = _provider_rate_limit("bdtheque", p.rate_limit)
         providers.append(p)
     return providers
 
@@ -821,7 +1051,7 @@ def _lookup_with_timeout(provider, title, timeout):
     return result[0]
 
 
-def lookup_category(title, google_books_key=None):
+def lookup_category(title, google_books_key=None, comicvine_key=None):
     """Query providers for a release title, return (category, confidence, provider, reason).
 
     Uses PROVIDER VOTING: query providers in priority order, tally the categories
@@ -835,7 +1065,9 @@ def lookup_category(title, google_books_key=None):
         return None, 0.0, None, "metadata disabled in config"
     if google_books_key is None:
         google_books_key = GOOGLE_BOOKS_API_KEY or None
-    providers = _build_providers(google_books_key)
+    if comicvine_key is None:
+        comicvine_key = COMICVINE_API_KEY or None
+    providers = _build_providers(google_books_key, comicvine_key)
     per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(providers), 1)
     per_call_timeout = max(per_call_timeout, 5.0)
     deadline = time.time() + float(_cfg.get("metadata.timeout_seconds", 25))

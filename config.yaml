@@ -44,10 +44,14 @@ metadata:
   timeout_seconds: 25        # max time to spend querying providers per title
   flaresolverr_url: "http://10.0.0.42:8191"
   google_books_api_key: ""    # or set GOOGLE_BOOKS_API_KEY env var
+  comicvine_api_key: ""       # or set COMICVINE_API_KEY env var
   providers:
     mangadex:
       enabled: true
       rate_limit: 0.25
+    mangabaka:
+      enabled: true
+      rate_limit: 2.25
     kitsu:
       enabled: true
       rate_limit: 1.5
@@ -60,12 +64,18 @@ metadata:
     googlebooks:
       enabled: true
       rate_limit: 1.0
+    comicvine:
+      enabled: true
+      rate_limit: 1.2
     planetebd:
       enabled: true
       rate_limit: 2.5
     bedetheque:
       enabled: true
       rate_limit: 2.0
+    bdtheque:
+      enabled: true
+      rate_limit: 2.2
 
 # ── Regex rules (fast-path fallback when metadata is off/unavailable) ─────
 # Each category has a list of (regex, weight) patterns and a min_score.
