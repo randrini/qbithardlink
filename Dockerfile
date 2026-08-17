@@ -3,7 +3,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install runtime deps (BeautifulSoup for HTML providers, requests for FlareSolverr, PyYAML for config)
+# Install runtime deps + gosu for privilege drop in entrypoint
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
@@ -13,7 +14,8 @@ COPY config.py /app/config.py
 COPY config.yaml /app/config.yaml
 COPY hardlink.sh /app/hardlink.sh
 COPY corpus.txt /app/corpus.txt
-RUN chmod +x /app/hardlink.sh && mkdir -p /app/logs
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/hardlink.sh /app/entrypoint.sh && mkdir -p /app/logs
 
 # Create a non-root user matching host PUID/PGID (defaults 99:100, common on Unraid).
 # If the GID/UID already exist in the base image, reuse them instead of failing.
@@ -26,6 +28,6 @@ RUN \
     fi && \
     chown -R ${PUID}:${PGID} /app
 
-# Run as a daemon by default; use `--once` for a single pass.
-USER appuser
+# Entrypoint fixes bind-mount permissions at runtime, then drops to appuser.
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "/app/classifier.py"]

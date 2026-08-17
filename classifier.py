@@ -203,11 +203,22 @@ class QBClient:
         req = urllib.request.Request(url, data=body)
         if self.cookies:
             req.add_header("Cookie", "; ".join(f"{k}={v}" for k, v in self.cookies.items()))
+        # qBittorrent WebAPI requires Referer to match the origin for non-GET requests.
+        req.add_header("Referer", self.url)
         with urllib.request.urlopen(req) as resp:
+            # Capture session cookies (e.g. SID from auth/login).
+            for header in resp.getheaders():
+                if header[0].lower() == "set-cookie":
+                    cookie = header[1].split(";")[0].strip()
+                    if "=" in cookie:
+                        k, v = cookie.split("=", 1)
+                        self.cookies[k] = v
             return resp.read()
 
     def login(self):
         self._request("auth/login", {"username": self.user, "password": self.password})
+        if "SID" not in self.cookies:
+            raise RuntimeError("qBittorrent login did not return a session cookie")
 
     def get_torrents(self):
         return json.loads(self._request("torrents/info"))
