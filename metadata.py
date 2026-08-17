@@ -73,21 +73,30 @@ _FLARESOLVERR_WARNED = False
 
 
 def _flaresolverr_available():
-    """Check (and cache) whether FlareSolverr is reachable."""
+    """Check (and cache) whether the solver is reachable.
+
+    Tries Trawl's /health first, then FlareSolverr/Byparr GET /v1.
+    """
     global _FLARESOLVERR_OK, _FLARESOLVERR_WARNED
     if not HAS_REQUESTS or not FLARESOLVERR_URL:
         _FLARESOLVERR_OK = False
         return False
     if _FLARESOLVERR_OK is not None:
         return _FLARESOLVERR_OK
-    try:
-        r = _requests.get(f"{FLARESOLVERR_URL}/v1", timeout=3)
-        _FLARESOLVERR_OK = r.status_code == 200
-    except Exception:
-        _FLARESOLVERR_OK = False
+
+    _FLARESOLVERR_OK = False
+    for path in ("/health", "/v1"):
+        try:
+            r = _requests.get(f"{FLARESOLVERR_URL}{path}", timeout=3)
+            if r.status_code == 200:
+                _FLARESOLVERR_OK = True
+                break
+        except Exception:
+            continue
+
     if not _FLARESOLVERR_OK and not _FLARESOLVERR_WARNED:
         _FLARESOLVERR_WARNED = True
-        log.warning("FlareSolverr unavailable at %s; disabling JS-dependent providers", FLARESOLVERR_URL)
+        log.warning("FlareSolverr/Trawl API unavailable at %s; disabling JS-dependent providers", FLARESOLVERR_URL)
     return _FLARESOLVERR_OK
 
 
