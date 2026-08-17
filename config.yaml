@@ -96,10 +96,6 @@ rules:
       - ["(?i)\\bcorriere\\b", 1.0]
       - ["(?i)\\bnewspaper\\b", 1.0]
       - ["(?i)\\bpresse\\b", 0.9]
-      - ["(?i)\\bl['’]?\\s*equipe\\b", 1.0]
-      - ["(?i)\\bliberation\\b", 1.0]
-      - ["(?i)\\blemunde\\b", 1.0]
-      - ["(?i)\\bfigaro\\b", 1.0]
   manga:
     min_score: 0.9
     patterns:
@@ -114,13 +110,8 @@ rules:
       - ["(?i)\\bhybrid manga\\b", 1.0]
       - ["(?i)\\bT\\d{1,4}\\b", 0.7]
       - ["(?i)\\b[0-9]{4}\\b.*\\bvol\\.?\\s*\\d+\\b", 0.3]
-      - ["(?i)\\bchi\\b.*\\b(vie de chat|une vie)\\b", 1.0]
-      - ["(?i)\\bswitch\\s*girl\\b", 1.0]
-      - ["(?i)\\ball you need is kill\\b", 1.0]
-      - ["(?i)\\bdogsred\\b", 1.0]
-      - ["(?i)\\[cbz\\]", 0.2]
-      - ["(?i)\\[cbr\\]", 0.2]
-      - ["(?i)\\basterix\\b", -1.0]
+      - ["(?i)\\[cbz\\]", 0.3]
+      - ["(?i)\\[cbr\\]", 0.3]
   manhwa:
     min_score: 0.9
     patterns:
@@ -129,30 +120,21 @@ rules:
       - ["(?i)\\bwebtoon\\b", 0.9]
       - ["(?i)\\bch\\.?\\d{1,4}(-ch\\.?\\d{1,4})?\\b", 1.0]
       - ["(?i)\\bep\\.?\\d{1,4}\\b", 0.9]
+      - ["(?i)\\[cbz\\]", 0.3]
+      - ["(?i)\\[cbr\\]", 0.3]
   comics:
     min_score: 0.9
     patterns:
-      - ["(?i)\\bdc comics\\b", 1.0]
-      - ["(?i)\\bdetective comics\\b", 1.0]
-      - ["(?i)\\bbatman\\b", 1.0]
-      - ["(?i)\\bsuperman\\b", 1.0]
-      - ["(?i)\\bwonder woman\\b", 1.0]
-      - ["(?i)\\bharley quinn\\b", 1.0]
-      - ["(?i)\\bx[- ]?men\\b", 1.0]
-      - ["(?i)\\bswamp thing\\b", 1.0]
       - ["(?i)\\bmarvel\\b", 1.0]
       - ["(?i)\\bdc\\b", 0.8]
       - ["(?i)\\bannual\\b", 0.8]
       - ["(?i)\\bgraphic novel\\b", 0.9]
       - ["(?i)\\bcomic\\b", 0.8]
-      - ["(?i)\\bthe walking dead\\b", 1.0]
-      - ["(?i)\\bbloodborne\\b", 1.0]
-      - ["(?i)\\bson of ultron\\b", 1.0]
-      - ["(?i)\\bempire\\b", 0.7]
-      - ["(?i)\\bzone-empire\\b", 1.0]
-      - ["(?i)\\bmessiah complex\\b", 1.0]
-      - ["(?i)\\bx-men\\b", 1.0]
-      - ["(?i)\\bavengers\\b", 1.0]
+      - ["(?i)\\bscanner\\b", 0.7]
+      - ["(?i)\\bdigital\\b", 0.3]
+      - ["(?i)\\bTO\\d{1,4}\\b", 0.9]
+      - ["(?i)\\bson of ultron\\b", 0.9]
+      - ["(?i)\\bzone-empire\\b", 0.9]
   bd:
     min_score: 0.9
     patterns:
@@ -171,17 +153,13 @@ rules:
       - ["(?i)\\b\\[?bd\\]?\\b", 0.7]
       - ["(?i)\\b\\[?int?egrale\\]?\\b", 0.5]
       - ["(?i)\\b\\[?collection\\]?\\b", 0.5]
-      - ["(?i)\\b\\[?tome\\]?\\b", 0.4]
-      - ["(?i)\\bspirou\\b", 1.0]
-      - ["(?i)\\bekh[oö]\\b", 1.0]
-      - ["(?i)\\basterix\\b", 1.0]
-      - ["(?i)\\braven\\b", 1.0]
-      - ["(?i)\\bterres\\s+d\\s*ynuma\\b", 1.0]
-      - ["(?i)\\bynuma\\b", 1.0]
-      - ["(?i)\\[cbr\\]", 0.9]
-      - ["(?i)\\[cbz\\]", 0.9]
-      - ["(?i)\\bcbr\\b", 0.9]
-      - ["(?i)\\bcb[rz]\\b", 0.9]
+      - ["(?i)\\b\\[?tome\\]?\\b", 0.5]
+      - ["(?i)\\bfr\\b", 0.3]
+      - ["(?i)\\bfrench\\b", 0.3]
+      - ["(?i)\\[cbr\\]", 0.4]
+      - ["(?i)\\[cbz\\]", 0.4]
+      - ["(?i)\\bcbr\\b", 0.4]
+      - ["(?i)\\bcb[rz]\\b", 0.4]
   light-novel:
     min_score: 0.9
     patterns:
