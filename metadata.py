@@ -1111,12 +1111,12 @@ def _publisher_match(publisher, known_set):
     return False
 
 
-def _refine_format(cand):
+def _refine_format(cand, query=""):
     """Refine a candidate format using publisher/language/genres/title context.
 
     Google Books/OpenLibrary often return generic categories; this uses
-    publisher, language, and subject markers to correct them without
-    hardcoding series names.
+    publisher, language, subject markers, and the original release query to
+    correct them without hardcoding series names.
     """
     fmt = cand.get("format")
     title = str(cand.get("title") or "")
@@ -1126,15 +1126,31 @@ def _refine_format(cand):
     combined = f"{title} {publisher} {genres}"
     combined_norm = _norm_token(combined)
     tokens = set(combined_norm.split())
+    query_norm = _norm(query)
+    query_tokens = set(query_norm.split())
 
-    has_manga_marker = bool(tokens & _MANGA_MARKERS or _publisher_match(publisher, _MANGA_PUBLISHERS))
-    has_french = "fr" in language or "fre" in language or "french" in combined_norm
-    has_bd_marker = bool(tokens & _BD_MARKERS or _publisher_match(publisher, _FRENCH_BD_PUBLISHERS))
-    has_comic_marker = bool(tokens & _COMIC_MARKERS or _publisher_match(publisher, _US_COMIC_PUBLISHERS))
+    has_manga_marker = bool(
+        tokens & _MANGA_MARKERS or query_tokens & _MANGA_MARKERS
+        or _publisher_match(publisher, _MANGA_PUBLISHERS)
+    )
+    has_french = (
+        "fr" in language or "fre" in language or "french" in combined_norm
+        or "french" in query_norm
+    )
+    has_bd_marker = bool(
+        tokens & _BD_MARKERS or query_tokens & _BD_MARKERS
+        or _publisher_match(publisher, _FRENCH_BD_PUBLISHERS)
+    )
+    has_comic_marker = bool(
+        tokens & _COMIC_MARKERS or query_tokens & _COMIC_MARKERS
+        or _publisher_match(publisher, _US_COMIC_PUBLISHERS)
+    )
+    # CBZ/CBR in the original release name is a strong visual-comics signal.
+    has_cbz_cbr = bool(re.search(r"\[?cb[rz]\]?", query, re.I))
 
     # Manga/manhwa/webtoon take precedence (strong genre/subject signals)
     if has_manga_marker:
-        if "manhwa" in tokens or "webtoon" in tokens:
+        if "manhwa" in tokens or "webtoon" in tokens or "manhwa" in query_tokens or "webtoon" in query_tokens:
             return "webtoon"
         return "manga"
 
@@ -1146,8 +1162,10 @@ def _refine_format(cand):
     if fmt == "book":
         if has_french and has_bd_marker:
             return "bd"
-        if has_comic_marker:
+        if has_comic_marker or (has_cbz_cbr and not has_bd_marker):
             return "comic"
+        if has_cbz_cbr and has_bd_marker:
+            return "bd"
 
     return fmt
 
@@ -1207,8 +1225,8 @@ def lookup_category(title, google_books_key=None, comicvine_key=None):
         cand = _lookup_with_timeout(p, title, per_call_timeout)
         if not cand or not cand.get("format"):
             continue
-        # Disambiguate generic "book" using publisher/language/genres.
-        cand["format"] = _refine_format(cand)
+        # Disambiguate generic "book" using publisher/language/genres + original query.
+        cand["format"] = _refine_format(cand, query=title)
         cat = FORMAT_TO_CATEGORY.get(cand["format"])
         if not cat:
             continue
