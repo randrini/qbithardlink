@@ -254,7 +254,8 @@ class QBClient:
 #   "classified" → already routed to a category; skip on future polls.
 # A state file is the invisible guard: even if tags are cleared, we never
 # re-query metadata for a hash we've already processed.
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".classifier_state.json")
+STATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state")
+STATE_FILE = os.path.join(STATE_DIR, ".classifier_state.json")
 
 #: Tags that mark a torrent as already handled → skip on future polls.
 DONE_TAGS = frozenset({"review", "classified"})

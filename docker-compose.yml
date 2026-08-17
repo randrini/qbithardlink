@@ -34,8 +34,8 @@ services:
       - ./config.local.yaml:/app/config.local.yaml:ro
       # Persistent logs (classifier.log + hardlink.log).
       - ./logs:/app/logs
-      # Persistent idempotency state.
-      - ./.classifier_state.json:/app/.classifier_state.json
+      # Persistent idempotency state (file lives inside this directory).
+      - ./state:/app/state
       # qBittorrent downloads — ADJUST to your actual download path.
       - /mnt/user/data/torrents:/data/torrents
       # Library destination for hardlinks — ADJUST to your media library path.

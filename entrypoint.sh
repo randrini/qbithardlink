@@ -15,9 +15,20 @@ if ! getent passwd "$PUID" >/dev/null 2>&1; then
     useradd -u "$PUID" -g "$PGID" -d /app -s /bin/bash appuser
 fi
 
-# Fix ownership of paths the app needs to write to (bind mounts may arrive
-# owned by root or a different host user).
-chown -R "${PUID}:${PGID}" /app/logs /app/.classifier_state.json 2>/dev/null || true
+# Create / fix ownership of paths the app needs to write to (bind mounts may
+# arrive owned by root or a different host user).
+LIBRARY_ROOT="${LIBRARY_ROOT:-/data/media/books}"
+mkdir -p /app/logs /app/state "${LIBRARY_ROOT}"
+
+if ! chown -R "${PUID}:${PGID}" /app/logs /app/state "${LIBRARY_ROOT}"; then
+    # On shares with root_squash (NFS / Unraid user-shares), root can't chown.
+    # Fall back to making the directories group-writable so the unprivileged
+    # user can still create category subdirectories.
+    echo "[entrypoint] chown failed (likely root_squash); falling back to chmod 2775"
+    chmod -R 2775 /app/logs /app/state "${LIBRARY_ROOT}" || true
+fi
+
+echo "[entrypoint] Running as ${PUID}:${PGID}; library root: ${LIBRARY_ROOT} ($(stat -c '%A %U:%G' "${LIBRARY_ROOT}"))"
 
 # Run the classifier as the configured unprivileged user.
 exec gosu "${PUID}:${PGID}" "$@"
