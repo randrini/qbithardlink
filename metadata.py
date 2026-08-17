@@ -165,10 +165,10 @@ def _tokens(text):
 
 
 def _title_similar(a, b, min_overlap=0.6):
-    """True if the two titles match strongly enough.
+    """True if the two titles match strongly enough using whole-word tokens.
 
     Safe strategies:
-      1. Exact / substring containment (handles short titles like "Bread").
+      1. Exact equality.
       2. Short query (<=2 non-stop tokens): every query token must appear as a
          whole word in the provider title.
       3. Longer query: at least 2 shared non-stop tokens AND overlap
@@ -183,13 +183,13 @@ def _title_similar(a, b, min_overlap=0.6):
     if not na or not nb:
         return False
 
-    # Strategy 1: exact / substring containment.
-    if na == nb or na in nb or nb in na:
-        return True
-
     ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
         return False
+
+    # Strategy 1: exact equality after normalization.
+    if na == nb:
+        return True
 
     # Strategy 2: short query -> require whole-word presence of every token.
     if len(ta) <= 2:
