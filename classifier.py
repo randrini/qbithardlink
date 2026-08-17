@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -207,7 +208,15 @@ class QBClient:
         return json.loads(self._request("torrents/info"))
 
     def set_category(self, hashes, category):
-        self._request("torrents/setCategory", {"hashes": hashes, "category": category})
+        # qBittorrent returns 409 if the category does not exist yet.
+        try:
+            self._request("torrents/setCategory", {"hashes": hashes, "category": category})
+        except urllib.error.HTTPError as e:
+            if e.code == 409:
+                self._request("torrents/createCategory", {"category": category, "savePath": ""})
+                self._request("torrents/setCategory", {"hashes": hashes, "category": category})
+            else:
+                raise
 
     def add_tags(self, hashes, tags):
         self._request("torrents/addTags", {"hashes": hashes, "tags": tags})
