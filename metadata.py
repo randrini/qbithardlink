@@ -169,45 +169,44 @@ def _tokens(text):
     return {t for t in _norm(text).split() if len(t) > 2 and t not in _STOPWORDS}
 
 
-def _title_similar(a, b, min_overlap=0.6):
-    """True if the two titles match strongly enough using whole-word tokens.
+def _title_match_score(a, b, min_overlap=0.6):
+    """Return a 0..1 score for how strongly two titles match.
 
     Safe strategies:
-      1. Exact equality.
-      2. Short query (<=2 non-stop tokens): every query token must appear as a
-         whole word in the provider title.
-      3. Longer query: at least 2 shared non-stop tokens AND overlap
-         >= min_overlap relative to the QUERY token set.
-
-    Requiring overlap relative to the query (not the shorter side) stops
-    provider results with very few tokens from falsely matching: "Chi Une vie
-    de chat" vs PlanèteBD's "Le chat T15" shares only "chat", which is 1/3 of
-    the query tokens (too weak). Real matches like "The Savage Garden
-    Cultivating Carnivorous Plants" -> "The Savage Garden, Revised" share 2/4
-    of the query tokens.
+      1. Exact equality -> 1.0.
+      2. Short query (<=2 non-stop tokens): 1.0 if every query token appears
+         as a whole word in the provider title, else 0.0.
+      3. Longer query: score = shared tokens / query tokens, but at least 2
+         shared non-stop tokens are required. Return 0.0 if below min_overlap.
     """
     na, nb = _norm(a), _norm(b)
     if not na or not nb:
-        return False
+        return 0.0
 
     ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
-        return False
+        return 0.0
 
     # Strategy 1: exact equality after normalization.
     if na == nb:
-        return True
+        return 1.0
 
     # Strategy 2: short query -> require whole-word presence of every token.
     if len(ta) <= 2:
         nb_words = set(nb.split())
-        return all(t in nb_words for t in ta)
+        return 1.0 if all(t in nb_words for t in ta) else 0.0
 
     # Strategy 3: token overlap relative to the query token set.
     shared = ta & tb
     if len(shared) < 2:
-        return False
-    return len(shared) / len(ta) >= min_overlap
+        return 0.0
+    score = len(shared) / len(ta)
+    return score if score >= min_overlap else 0.0
+
+
+def _title_similar(a, b, min_overlap=0.6):
+    """Boolean wrapper for _title_match_score."""
+    return _title_match_score(a, b, min_overlap) > 0.0
 
 
 # ── Provider base ─────────────────────────────────────────────────────────
@@ -378,11 +377,29 @@ class MangaBakaProvider(Provider):
             items = data.get("data") if isinstance(data, dict) else data
             if not isinstance(items, list) or not items:
                 return None
-            best = items[0]
-            if not isinstance(best, dict):
-                return None
-            t = best.get("name") or best.get("title")
-            if not t or not _title_similar(t, title):
+
+            best = None
+            best_score = 0.0
+            best_t = ""
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                candidates = [item.get("name") or item.get("title")]
+                for alt in item.get("titles") or []:
+                    if isinstance(alt, dict) and alt.get("title"):
+                        candidates.append(alt["title"])
+                    elif isinstance(alt, str) and alt.strip():
+                        candidates.append(alt)
+                for t in candidates:
+                    if not t:
+                        continue
+                    score = _title_match_score(t, title)
+                    if score > best_score:
+                        best_score = score
+                        best = item
+                        best_t = t
+
+            if best is None or best_score < 0.5:
                 return None
 
             # Format from `type` field, with tag/genre fallback.
@@ -416,6 +433,11 @@ class MangaBakaProvider(Provider):
                         break
 
             genres_list = []
+            raw_tags = best.get("tags") or []
+            if raw_tags and isinstance(raw_tags[0], dict) and "is_genre" in raw_tags[0]:
+                for tag in raw_tags:
+                    if isinstance(tag, dict) and tag.get("name") and tag.get("is_genre"):
+                        genres_list.append(tag["name"])
             for g in best.get("genres") or []:
                 if isinstance(g, dict) and g.get("name"):
                     genres_list.append(g["name"])
@@ -423,8 +445,8 @@ class MangaBakaProvider(Provider):
                     genres_list.append(g.strip())
 
             return self._candidate(
-                title=t, format=fmt, publisher=publisher,
-                genres=genres_list, confidence=0.9,
+                title=best_t, format=fmt, publisher=publisher,
+                genres=genres_list, confidence=best_score,
             )
         except Exception as e:
             log.debug("MangaBaka lookup failed: %s", e)
@@ -575,14 +597,16 @@ class PlaneteBDProvider(Provider):
             if not hits:
                 return None
 
-            # 2. Pick best hit by title similarity. Require a real match —
+            # 2. Pick best hit by title similarity score. Require a real match —
             #    never accept the first hit blindly (false positives).
             best = None
+            best_score = 0.0
             for h in hits:
-                if _title_similar(h["label"], title):
+                score = _title_match_score(h["label"], title)
+                if score > best_score:
+                    best_score = score
                     best = h
-                    break
-            if not best:
+            if not best or best_score < 0.7:
                 return None
 
             # 3. Fetch detail page
@@ -803,15 +827,17 @@ class BDthequeProvider(Provider):
 
             # 2. Pick best hit by title similarity (nom / nomvo).
             best = None
+            best_score = 0.0
             for h in hits:
                 for key in ("nom", "nomvo"):
                     n = h.get(key)
-                    if n and _title_similar(n, title):
+                    if not n:
+                        continue
+                    score = _title_match_score(n, title)
+                    if score > best_score:
+                        best_score = score
                         best = h
-                        break
-                if best:
-                    break
-            if not best:
+            if not best or best_score < 0.7:
                 return None
 
             # 3. Fetch series detail page
@@ -1069,7 +1095,7 @@ def lookup_category(title, google_books_key=None, comicvine_key=None):
         comicvine_key = COMICVINE_API_KEY or None
     providers = _build_providers(google_books_key, comicvine_key)
     per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(providers), 1)
-    per_call_timeout = max(per_call_timeout, 5.0)
+    per_call_timeout = max(per_call_timeout, 10.0)  # slow providers throttle 2-3s before the HTTP call
     deadline = time.time() + float(_cfg.get("metadata.timeout_seconds", 25))
 
     votes = {}   # category -> [provider_ids]
@@ -1108,6 +1134,26 @@ def lookup_category(title, google_books_key=None, comicvine_key=None):
         if len(ids) >= 2:
             if len(ids) > best_count:
                 best_cat, best_count = cat, len(ids)
+
+    # ── Strong single-vote override ─────────────────────────────────────────
+    # When no category reaches a 2-provider consensus, accept the single
+    # strongest candidate if it is a high-confidence match (>=0.9) from a
+    # provider that does not require corroboration. This prevents weak,
+    # conflicting generic/FlareSolverr results from overriding an exact match.
+    if best_cat is None:
+        strong = None
+        strong_score = 0.0
+        for cat, cand in best_by_cat.items():
+            provider_id = cand.get("provider")
+            conf = cand.get("confidence", 0.0)
+            provider_requires_corroboration = any(
+                pp.id == provider_id and pp.requires_corroboration for pp in providers
+            )
+            if conf >= 0.9 and not provider_requires_corroboration and conf > strong_score:
+                strong = cat
+                strong_score = conf
+        if strong:
+            best_cat = strong
 
     if best_cat is None and len(votes) == 1:
         cat = next(iter(votes))

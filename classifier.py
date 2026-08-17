@@ -106,7 +106,7 @@ _META_NOISE = re.compile(
     r"(?i)"
     r"\[(?:epub|pdf|cbz|cbr|mobi|azw3?|m4b|aac|mp3|int?egrale|collection|bonus|scan|retail|web|hybrid|raw)\]"
     r"|\.(?:epub|pdf|cbz|cbr|mobi|azw3?|m4b|aac|mp3)\b"
-    r"|[-_ ](?:NOTAG|NoTag|notag|TRADEME|kop1|AmisMed|PiXeL|RACHE|pRO|Pro|DiVER|iDiB|CTO|21A1|aKraa|NoTag)\b"
+    r"|[-_ ](?:NOTAG|NoTag|notag|TRADEME|kop1|AmisMed|PiXeL|RACHE|pRO|Pro|DiVER|iDiB|CTO|21A1|aKraa|NoTag|ebdz|Team-Moi|NoFace696)\b"
     r"|\b(?:19|20)\d{2}\b"
     r"|\bT\d{1,4}\b"
     r"|\b(?:FR|FRENCH|ENGLISH|iTALiAN|JP|JPN|KR|KOR|CN|CHN)\b"
