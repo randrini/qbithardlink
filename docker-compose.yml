@@ -11,6 +11,12 @@ services:
       - QB_URL=http://192.168.1.116:8084
       - QB_USER=bidalos
       - QB_PASS=your-password
+      - QB_SOURCE_CATEGORY=books
+      - LIBRARY_ROOT=/data/media/books
+      - HARDLINK_SCRIPT=/app/hardlink.sh
+      - HARDLINK_ENABLED=true
+      - LOG_FILE=/app/logs/classifier.log
+      - LOG_LEVEL=INFO
       - POLL_INTERVAL=10
       # FlareSolverr endpoint for Cloudflare/anti-bot protected BD providers
       - FLARESOLVERR_URL=http://10.0.0.42:8191
@@ -22,3 +28,13 @@ services:
       - ./metadata.py:/app/metadata.py:ro
       - ./config.py:/app/config.py:ro
       - ./config.yaml:/app/config.yaml:ro
+      # Optional local secrets (git-ignored) — create config.local.yaml if needed.
+      - ./config.local.yaml:/app/config.local.yaml:ro
+      # Persistent logs (classifier.log + hardlink.log).
+      - ./logs:/app/logs
+      # Persistent idempotency state.
+      - ./.classifier_state.json:/app/.classifier_state.json
+      # qBittorrent downloads — ADJUST to your actual download path.
+      - /mnt/user/data:/data
+      # Library destination for hardlinks — ADJUST to your media library path.
+      - /mnt/user/media/books:/data/media/books

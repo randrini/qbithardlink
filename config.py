@@ -19,7 +19,15 @@ LOCAL_CONFIG_PATH = os.environ.get("LOCAL_CONFIG_PATH", os.path.join(_CONFIG_DIR
 
 #: Defaults used when config.yaml is missing or a key is absent.
 DEFAULTS = {
-    "qb": {"url": "http://192.168.1.116:8084", "user": "bidalos", "password": "your-password"},
+    "qb": {
+        "url": "http://192.168.1.116:8084",
+        "user": "bidalos",
+        "password": "your-password",
+        "source_category": "books",
+    },
+    "library": {"root": "/data/media/books"},
+    "hardlink": {"script": "/app/hardlink.sh", "enabled": True},
+    "log": {"file": "/app/logs/classifier.log", "level": "INFO"},
     "poll_interval": 10,
     "thresholds": {"auto": 0.90, "review": 0.70},
     "default_category": "ebooks",
@@ -81,6 +89,18 @@ def _env_override(cfg):
         cfg["qb"]["user"] = os.environ["QB_USER"]
     if os.environ.get("QB_PASS"):
         cfg["qb"]["password"] = os.environ["QB_PASS"]
+    if os.environ.get("QB_SOURCE_CATEGORY"):
+        cfg["qb"]["source_category"] = os.environ["QB_SOURCE_CATEGORY"]
+    if os.environ.get("LIBRARY_ROOT"):
+        cfg["library"]["root"] = os.environ["LIBRARY_ROOT"]
+    if os.environ.get("HARDLINK_SCRIPT"):
+        cfg["hardlink"]["script"] = os.environ["HARDLINK_SCRIPT"]
+    if os.environ.get("HARDLINK_ENABLED"):
+        cfg["hardlink"]["enabled"] = os.environ["HARDLINK_ENABLED"].strip().lower() in ("1", "true", "yes", "on")
+    if os.environ.get("LOG_FILE"):
+        cfg["log"]["file"] = os.environ["LOG_FILE"]
+    if os.environ.get("LOG_LEVEL"):
+        cfg["log"]["level"] = os.environ["LOG_LEVEL"]
     if os.environ.get("POLL_INTERVAL"):
         cfg["poll_interval"] = int(os.environ["POLL_INTERVAL"])
     if os.environ.get("FLARESOLVERR_URL"):

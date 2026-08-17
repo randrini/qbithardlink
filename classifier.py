@@ -20,8 +20,10 @@ Usage:
 """
 import json
 import logging
+import logging.handlers
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -261,7 +263,7 @@ def _save_state(processed):
         with open(STATE_FILE, "w") as f:
             json.dump({"processed": sorted(processed)}, f)
     except Exception as e:
-        print(f"warning: could not write state file: {e}")
+        log.warning("could not write state file: %s", e)
 
 
 def process_once(qb, use_metadata=False, state=None):
@@ -270,8 +272,11 @@ def process_once(qb, use_metadata=False, state=None):
     if state is None:
         state = _load_state()
     changed = False
+    source_category = cfg.get("qb.source_category", "books")
+    hardlink_enabled = bool(cfg.get("hardlink.enabled", True))
+    hardlink_script = cfg.get("hardlink.script", "/app/hardlink.sh")
     for t in qb.get_torrents():
-        if t.get("category") != "books":
+        if t.get("category") != source_category:
             continue
         h = t.get("hash")
         tags = {x.strip().lower() for x in t.get("tags", "").split(",") if x.strip()}
@@ -294,7 +299,36 @@ def process_once(qb, use_metadata=False, state=None):
         qb.set_auto_management(h, True)
         state.add(h)
         changed = True
-        print(f"[{t.get('name')}] → {cat} (conf={conf:.2f}) {reasons}")
+        log.info("[%s] → %s (conf=%.2f) %s", t.get("name"), cat, conf, reasons)
+
+        # Hardlink the completed content into the library (if enabled).
+        if hardlink_enabled:
+            content_path = t.get("content_path") or (
+                os.path.join(t.get("save_path", ""), t.get("name", "")) if t.get("save_path") and t.get("name") else None
+            )
+            if content_path:
+                torrent_name = t.get("name", "")
+                try:
+                    result = subprocess.run(
+                        [hardlink_script, torrent_name, content_path, cat],
+                        check=False,
+                        timeout=300,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result.returncode == 0:
+                        log.info("hardlink ok: %s → %s (rc=%d)", torrent_name, content_path, result.returncode)
+                    else:
+                        log.warning(
+                            "hardlink failed: %s (rc=%d) stderr=%s",
+                            torrent_name, result.returncode, (result.stderr or "").strip(),
+                        )
+                except subprocess.TimeoutExpired:
+                    log.warning("hardlink timed out after 300s: %s", torrent_name)
+                except Exception as e:
+                    log.warning("hardlink error for %s: %s", torrent_name, e)
+            else:
+                log.warning("hardlink enabled but no content_path/save_path for %s", t.get("name"))
 
     if changed:
         _save_state(state)
@@ -329,6 +363,28 @@ def run_test(use_metadata=False):
 
 
 def main():
+    # ── Logging setup: rotating file + console ────────────────────────────
+    log_file = cfg.get("log.file", "/app/logs/classifier.log")
+    log_level = getattr(logging, str(cfg.get("log.level", "INFO")).upper(), logging.INFO)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    try:
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        handlers.insert(
+            0,
+            logging.handlers.RotatingFileHandler(
+                log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+            ),
+        )
+    except Exception as e:
+        log.warning("could not set up file logging (%s) — console only", e)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+    )
+
     if "--test-meta" in sys.argv:
         run_test(use_metadata=True)
         return
@@ -343,13 +399,13 @@ def main():
         process_once(qb, use_metadata=True)
         return
 
-    print(f"Classifier watching {QB_URL} every {POLL_INTERVAL}s...")
+    log.info("Classifier watching %s every %ds...", QB_URL, POLL_INTERVAL)
     state = _load_state()
     while True:
         try:
             state = process_once(qb, use_metadata=True, state=state)
         except Exception as e:
-            print(f"error: {e}")
+            log.exception("error in poll loop: %s", e)
         time.sleep(POLL_INTERVAL)
 
 
