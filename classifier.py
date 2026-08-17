@@ -271,6 +271,7 @@ def _load_state():
 
 def _save_state(processed):
     try:
+        os.makedirs(STATE_DIR, exist_ok=True)
         with open(STATE_FILE, "w") as f:
             json.dump({"processed": sorted(processed)}, f)
     except Exception as e:
@@ -290,10 +291,15 @@ def process_once(qb, use_metadata=False, state=None):
         if t.get("category") != source_category:
             continue
         h = t.get("hash")
-        tags = {x.strip().lower() for x in t.get("tags", "").split(",") if x.strip()}
+        raw_tags = t.get("tags", "")
+        if isinstance(raw_tags, list):
+            tags = {str(x).strip().lower() for x in raw_tags if str(x).strip()}
+        else:
+            tags = {x.strip().lower() for x in str(raw_tags).split(",") if x.strip()}
 
         # Idempotency: skip if already handled (tag or state file).
         if tags & DONE_TAGS or h in state:
+            log.debug("skipping already-handled torrent %s (tags=%s, in_state=%s)", t.get("name"), tags, h in state)
             continue
 
         cat, conf, reasons = classify(t.get("name", ""), t.get("tags", ""), use_metadata=use_metadata)

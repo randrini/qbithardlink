@@ -12,7 +12,7 @@
 #   - folder torrents (%F = path to folder)
 #   - already-imported detection (skip if the library copy already exists)
 #   - cross-device fallback (hardlink fails → copy, with a warning)
-set -euo pipefail
+set -uo pipefail
 
 torrentName="$1"
 torrentPath="$2"
@@ -63,14 +63,15 @@ if [[ -e "$destPath" ]]; then
 fi
 
 # Hardlink. cp -l creates hardlinks (same inode) instead of copies.
-if cp -rl -- "$torrentPath" "$destDir/"; then
+if cp -rl -- "$torrentPath" "$destDir/" 2>>"$logFile"; then
   log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
   exit 0
 fi
 
 # Cross-device fallback: hardlink failed (likely different filesystems).
 # Fall back to a copy so the library still gets the file, but warn loudly.
-if cp -r -- "$torrentPath" "$destDir/"; then
+log "[!] Hardlink failed for \"${torrentName}\"; falling back to copy (may duplicate disk space)"
+if cp -r -- "$torrentPath" "$destDir/" 2>>"$logFile"; then
   log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
   log "    WARNING: this duplicates disk space. Ensure /data/torrents and /data/media are on the SAME filesystem."
   exit 0
