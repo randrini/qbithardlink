@@ -878,6 +878,102 @@ class BDthequeProvider(Provider):
 # ════════════════════════════════════════════════════════════════════════
 # LIGHT NOVEL providers
 # ════════════════════════════════════════════════════════════════════════
+class RanobeDBProvider(Provider):
+    """RanobeDB — light novel database (official REST API, no key).
+
+    Endpoint: https://ranobedb.org/api/v0/series?q=...
+    Since the whole catalog is light novels, format is hardcoded to
+    light_novel. Use _title_match_score on title + alternative titles to
+    avoid false positives from the API's token-based relevance search.
+    """
+    id = "RANOBEDB"
+    display_name = "RanobeDB"
+    types = {"light_novel"}
+    rate_limit = 0.6  # comfortably under documented 60/min ceiling
+
+    _BASE = "https://ranobedb.org/api/v0"
+
+    def lookup(self, title):
+        self._throttle()
+        try:
+            data = _http_get_json(f"{self._BASE}/series", params={"q": title, "limit": 10})
+            items = data.get("series") if isinstance(data, dict) else data
+            if not isinstance(items, list) or not items:
+                return None
+
+            best = None
+            best_score = 0.0
+            best_t = ""
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                candidates = []
+                for key in ("title", "romaji"):
+                    v = item.get(key)
+                    if v:
+                        candidates.append(str(v))
+                for alt in item.get("titles") or []:
+                    if isinstance(alt, dict) and alt.get("title"):
+                        candidates.append(str(alt["title"]))
+
+                for t in candidates:
+                    if not t:
+                        continue
+                    score = _title_match_score(t, title)
+                    # RanobeDB's native sim_score (0..1) is available on search results.
+                    sim = float(item.get("sim_score") or 0)
+                    if sim:
+                        score = max(score, sim)
+                    if score > best_score:
+                        best_score = score
+                        best = item
+                        best_t = t
+
+            if best is None or best_score < 0.6:
+                return None
+
+            # Prefer localized title; fall back to original/romaji.
+            fetched_title = best_t or best.get("title") or ""
+
+            # Extract year from YYYYMMDD int start_date.
+            year = None
+            for key in ("c_start_date", "start_date"):
+                d = best.get(key)
+                if isinstance(d, int) and d > 10000000:
+                    year = d // 10000
+                    break
+
+            # Genres from tags.
+            genres = []
+            for tag in best.get("tags") or []:
+                if isinstance(tag, dict) and tag.get("ttype") == "genre" and tag.get("name"):
+                    genres.append(tag["name"])
+
+            # Publisher: prefer publisher_type=="publisher" in English, else first.
+            publisher = None
+            for pub in best.get("publishers") or []:
+                if isinstance(pub, dict) and pub.get("name"):
+                    p_type = str(pub.get("publisher_type", "")).lower()
+                    p_lang = str(pub.get("lang", "")).lower()
+                    if p_type == "publisher" and p_lang in ("en", title[:2].lower()):
+                        publisher = pub["name"].strip()
+                        break
+            if not publisher:
+                for pub in best.get("publishers") or []:
+                    if isinstance(pub, dict) and pub.get("name"):
+                        publisher = pub["name"].strip()
+                        break
+
+            return self._candidate(
+                title=fetched_title, format="light_novel", publisher=publisher,
+                language=best.get("lang"), year=year, genres=genres,
+                confidence=best_score,
+            )
+        except Exception as e:
+            log.debug("RanobeDB lookup failed: %s", e)
+            return None
+
+
 class NovelUpdatesProvider(Provider):
     """Novel Updates — EN light novels (HTML/CF). format=book."""
     id = "NOVELUPDATES"
@@ -936,7 +1032,7 @@ def _build_providers(google_books_key=None, comicvine_key=None):
         p.rate_limit = _provider_rate_limit("googlebooks", p.rate_limit)
         providers.append(p)
 
-    # 3. Anime/manga metadata — public APIs, sometimes slow
+    # 3. Anime/manga/light-novel metadata — public APIs, sometimes slow
     if _provider_enabled("shikimori"):
         p = ShikimoriProvider()
         p.rate_limit = _provider_rate_limit("shikimori", p.rate_limit)
@@ -944,6 +1040,10 @@ def _build_providers(google_books_key=None, comicvine_key=None):
     if _provider_enabled("kitsu"):
         p = KitsuProvider()
         p.rate_limit = _provider_rate_limit("kitsu", p.rate_limit)
+        providers.append(p)
+    if _provider_enabled("ranobedb"):
+        p = RanobeDBProvider()
+        p.rate_limit = _provider_rate_limit("ranobedb", p.rate_limit)
         providers.append(p)
 
     # 4. Comics — public API, needs key

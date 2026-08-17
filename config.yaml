@@ -76,6 +76,9 @@ metadata:
     bdtheque:
       enabled: true
       rate_limit: 2.2
+    ranobedb:
+      enabled: true
+      rate_limit: 0.6
 
 # ── Regex rules (fast-path fallback when metadata is off/unavailable) ─────
 # Each category has a list of (regex, weight) patterns and a min_score.
