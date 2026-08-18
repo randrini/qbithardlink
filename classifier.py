@@ -323,7 +323,7 @@ _META_VOL_RE = re.compile(
 #: Language / format noise words — always stripped (not content signals).
 _META_LANG_RE = re.compile(
     r"\b(?:FR|FRENCH|ENGLISH|iTALiAN|JP|JPN|KR|KOR|CN|CHN|VOSTFR|TRUEFRENCH"
-    r"|RETAiL|SCAN|eBOOK|HYBRiD|HYBRID|WEB)\b",
+    r"|RETAiL|SCAN|eBOOK|HYBRiD|HYBRID|WEB|COMiC|COMIC|BD|MANGA|GRAPHIC\s+NOVEL|LIGHT\s+NOVEL|AUDIOBOOK)\b",
     re.I,
 )
 #: Content-type words stripped ONLY when the matching signal is absent.

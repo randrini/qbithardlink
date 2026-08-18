@@ -5,6 +5,8 @@ Usage:
     docker exec -it qbit-classifier python /app/test_providers.py "Journal.dun.prof.a.la.gomme.2024.RETAiL.COMiC.CBZ.eBOOK-NoTag" cbz
     docker exec -it -e LLM_ENABLED=true -e LLM_API_KEY=... qbit-classifier python /app/test_providers.py "Berserk" cbz
 """
+import io
+import logging
 import os
 import sys
 import time
@@ -13,6 +15,9 @@ sys.path.insert(0, "/app")
 
 from metadata import _build_providers, _lookup_with_timeout, llm_classify
 from classifier import clean_release_name, extract_signals
+
+# Capture provider debug logs during lookup so we can show the real reason.
+logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
 
 
 def main():
@@ -41,17 +46,26 @@ def main():
     print(f"Metadata providers: {len(providers)}")
     for p in providers:
         start = time.time()
+        # Capture any debug log output from this provider.
+        log_stream = io.StringIO()
+        handler = logging.StreamHandler(log_stream)
+        handler.setLevel(logging.DEBUG)
+        provider_logger = logging.getLogger("metadata")
+        provider_logger.addHandler(handler)
         try:
-            # Providers need the cleaned, searchable title.
             cand = _lookup_with_timeout(p, clean_title, 20)
             elapsed = time.time() - start
+            provider_logger.removeHandler(handler)
             if cand:
                 print(f"✓ {p.id:12s} ({elapsed:.2f}s): {cand.get('format'):10s} conf={cand.get('confidence', 0):.2f} title={cand.get('title')!r}")
             else:
-                print(f"✗ {p.id:12s} ({elapsed:.2f}s): no match / error")
+                log_tail = log_stream.getvalue().strip().splitlines()
+                reason = log_tail[-1] if log_tail else "no match"
+                print(f"✗ {p.id:12s} ({elapsed:.2f}s): {reason}")
         except Exception as e:
             elapsed = time.time() - start
-            print(f"✗ {p.id:12s} ({elapsed:.2f}s): error={e}")
+            provider_logger.removeHandler(handler)
+            print(f"✗ {p.id:12s} ({elapsed:.2f}s): exception={e}")
 
     # Optional LLM check
     if os.environ.get("LLM_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):

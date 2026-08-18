@@ -60,7 +60,7 @@ tag_overrides:
 metadata:
   enabled: true
   timeout_seconds: 25        # max time to spend querying providers per title
-  flaresolverr_url: "http://192.168.1.116:8193"
+  flaresolverr_url: "http://host.docker.internal:8191"
   google_books_api_key: ""    # or set GOOGLE_BOOKS_API_KEY env var
   comicvine_api_key: ""       # or set COMICVINE_API_KEY env var
   providers:

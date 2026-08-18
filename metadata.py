@@ -49,7 +49,7 @@ except Exception:
     HAS_REQUESTS = False
 
 # FlareSolverr endpoint (for Cloudflare/anti-bot protected sites)
-FLARESOLVERR_URL = os.environ.get("FLARESOLVERR_URL", "http://10.0.0.42:8191")
+FLARESOLVERR_URL = os.environ.get("FLARESOLVERR_URL", "http://192.168.1.116:8191")
 
 # Google Books API key (optional; improves ebook/comic/manga resolution)
 GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "").strip()
