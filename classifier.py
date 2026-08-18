@@ -454,8 +454,6 @@ def process_once(qb, use_metadata=False, state=None):
             qb.add_tags(h, "review")
         else:
             qb.add_tags(h, "classified")
-        qb.set_category(h, cat)
-        qb.set_auto_management(h, True)
         state.add(h)
         changed = True
         log.info("[%s] → %s (conf=%.2f) %s", t.get("name"), cat, conf, reasons)
@@ -463,7 +461,11 @@ def process_once(qb, use_metadata=False, state=None):
         # later crash does not cause re-processing / duplicate hardlinks.
         _save_state(state)
 
-        # Hardlink the completed content into the library (if enabled).
+        # Hardlink the completed content into the library BEFORE changing the
+        # qBittorrent category. Changing category with auto-management enabled
+        # can move the source files to the new category's folder, making the
+        # path we hold stale and breaking the hardlink.
+        hardlink_ok = False
         if hardlink_enabled:
             # Pick a source path that actually exists. qBittorrent's content_path
             # is usually the exact file/folder, while save_path is the parent.
@@ -490,6 +492,7 @@ def process_once(qb, use_metadata=False, state=None):
                     )
                     if result.returncode == 0:
                         log.info("hardlink ok: %s → %s (rc=%d)", torrent_name, content_path, result.returncode)
+                        hardlink_ok = True
                     else:
                         log.warning(
                             "hardlink failed: %s (rc=%d) stderr=%s",
@@ -504,6 +507,11 @@ def process_once(qb, use_metadata=False, state=None):
                     "hardlink enabled but no existing source path for %s (tried %s)",
                     t.get("name"), [c for c in candidates if c],
                 )
+
+        # Change the qBittorrent category only after hardlinking, so
+        # auto-management does not move the source files before we copy them.
+        qb.set_category(h, cat)
+        qb.set_auto_management(h, True)
 
     return state
 
