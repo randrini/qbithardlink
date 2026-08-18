@@ -56,7 +56,17 @@ mkdir -p -- "$destDir"
 # Determine the destination name: for a folder, use the folder name; for a
 # single file, use the filename.
 srcBase="$(basename "$torrentPath")"
-destPath="$destDir/$srcBase"
+
+# Kavita/Komga expect library root folders to contain only subdirectories, not
+# loose files. If the source is a single file, wrap it in a folder named after
+# the file (without extension) so the library stays series-folder clean.
+if [[ -f "$torrentPath" ]]; then
+  wrapDir="${srcBase%.*}"
+  mkdir -p -- "$destDir/$wrapDir"
+  destPath="$destDir/$wrapDir/$srcBase"
+else
+  destPath="$destDir/$srcBase"
+fi
 
 # Already-imported detection: if the destination already exists, skip.
 if [[ -e "$destPath" ]]; then
@@ -66,18 +76,34 @@ fi
 
 # Hardlink. cp -l creates hardlinks (same inode) instead of copies.
 # Keep stderr visible to the caller (daemon captures it) while also logging summary.
-if cp -rl -- "$torrentPath" "$destDir/"; then
-  log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
-  exit 0
+if [[ -f "$torrentPath" ]]; then
+  if cp -l -- "$torrentPath" "$destPath"; then
+    log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
+    exit 0
+  fi
+else
+  if cp -rl -- "$torrentPath" "$destDir/"; then
+    log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
+    exit 0
+  fi
 fi
 
 # Cross-device fallback: hardlink failed (likely different filesystems).
 # Fall back to a copy so the library still gets the file, but warn loudly.
 log "[!] Hardlink failed for \"${torrentName}\"; falling back to copy"
-if cp -r -- "$torrentPath" "$destDir/"; then
-  log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
-  log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
-  exit 0
+if [[ -f "$torrentPath" ]]; then
+  mkdir -p -- "$(dirname "$destPath")"
+  if cp -- "$torrentPath" "$destPath"; then
+    log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
+    log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
+    exit 0
+  fi
+else
+  if cp -r -- "$torrentPath" "$destDir/"; then
+    log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
+    log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
+    exit 0
+  fi
 fi
 
 log "[x] Failed to import \"${torrentName}\" (hardlink and copy both failed)"
