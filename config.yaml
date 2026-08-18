@@ -110,8 +110,8 @@ metadata:
 llm:
   enabled: false
   mode: "fallback"     # "fallback" = only when cascade is uncertain; "verify" = always check
-  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
-  model: "gemini-3.6-flash"
+  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent"
+  model: "gemini-flash-lite-latest"
   api_key: ""          # your Gemini API key (or set LLM_API_KEY in .env)
   timeout: 30          # seconds per request
 
