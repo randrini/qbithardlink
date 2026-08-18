@@ -47,8 +47,8 @@ services:
       - ./logs:/app/logs
       # Persistent idempotency state (file lives inside this directory).
       - ./state:/app/state
-      # ═══ ADJUST these to match your Unraid shares ═══
+      # ═══ ADJUST via .env: DOWNLOAD_PATH and LIBRARY_PATH ═══
       # qBittorrent downloads — must be the SAME filesystem as LIBRARY_ROOT for hardlinks.
-      - /mnt/user/data/torrents:/data/torrents
+      - ${DOWNLOAD_PATH:-/mnt/user/data/torrents}:/data/torrents
       # Library destination for hardlinks.
-      - /mnt/user/media/books:/data/media/books
+      - ${LIBRARY_PATH:-/mnt/user/media/books}:/data/media/books
