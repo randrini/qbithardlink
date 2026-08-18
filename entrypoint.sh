@@ -28,6 +28,10 @@ if ! chown -R "${PUID}:${PGID}" /app/logs /app/state "${LIBRARY_ROOT}"; then
     chmod -R 2775 /app/logs /app/state "${LIBRARY_ROOT}" || true
 fi
 
+# Export library root under the name hardlink.sh expects.
+export LIBRARY_ROOT MEDIA_ROOT="${LIBRARY_ROOT}"
+export HARDLINK_LOG="/app/logs/hardlink.log"
+
 echo "[entrypoint] Running as ${PUID}:${PGID}; library root: ${LIBRARY_ROOT} ($(stat -c '%A %U:%G' "${LIBRARY_ROOT}"))"
 
 # Run the classifier as the configured unprivileged user.

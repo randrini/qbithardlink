@@ -1,6 +1,6 @@
 #!/bin/bash
 # qBittorrent "Run external program on torrent completion" script.
-# Args: %N (name) %F (content path) %L (category) %R (root path) %D (save path)
+# Args: %N (name) %F (content path / root path) %L (category)
 #
 # Maps category → library destination and hardlinks the completed content
 # into the media library. The torrent-side file keeps seeding; the library
@@ -8,8 +8,8 @@
 # break the library copy.
 #
 # Handles:
-#   - single-file torrents (%F = path to file)
-#   - folder torrents (%F = path to folder)
+#   - single-file torrents (path to file)
+#   - folder torrents (path to folder)
 #   - already-imported detection (skip if the library copy already exists)
 #   - cross-device fallback (hardlink fails → copy, with a warning)
 set -uo pipefail
@@ -18,7 +18,9 @@ torrentName="$1"
 torrentPath="$2"
 torrentCategory="$3"
 
-logFile="$(dirname "$0")/hardlink.log"
+# Persist hardlink.log alongside classifier.log (both under /app/logs in Docker).
+logFile="${HARDLINK_LOG:-$(dirname "$0")/logs/hardlink.log}"
+mkdir -p "$(dirname "$logFile")"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$logFile"; }
 
 # Categories managed by the *Arr apps or video content — never hardlink these.
@@ -29,8 +31,8 @@ if [[ ",$excludedCategories," == *",$torrentCategory,"* ]]; then
 fi
 
 # Category → library destination (source of truth).
-# Base roots are overridable via env (MEDIA_ROOT) for testing/custom layouts.
-MEDIA_ROOT="${MEDIA_ROOT:-/data/media/books}"
+# LIBRARY_ROOT is the canonical env var; MEDIA_ROOT is accepted as legacy fallback.
+MEDIA_ROOT="${LIBRARY_ROOT:-${MEDIA_ROOT:-/data/media/books}}"
 case "$torrentCategory" in
   manga)        destDir="$MEDIA_ROOT/manga" ;;
   manhwa)       destDir="$MEDIA_ROOT/manhwa" ;;
@@ -63,17 +65,18 @@ if [[ -e "$destPath" ]]; then
 fi
 
 # Hardlink. cp -l creates hardlinks (same inode) instead of copies.
-if cp -rl -- "$torrentPath" "$destDir/" 2>>"$logFile"; then
+# Keep stderr visible to the caller (daemon captures it) while also logging summary.
+if cp -rl -- "$torrentPath" "$destDir/"; then
   log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
   exit 0
 fi
 
 # Cross-device fallback: hardlink failed (likely different filesystems).
 # Fall back to a copy so the library still gets the file, but warn loudly.
-log "[!] Hardlink failed for \"${torrentName}\"; falling back to copy (may duplicate disk space)"
-if cp -r -- "$torrentPath" "$destDir/" 2>>"$logFile"; then
+log "[!] Hardlink failed for \"${torrentName}\"; falling back to copy"
+if cp -r -- "$torrentPath" "$destDir/"; then
   log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
-  log "    WARNING: this duplicates disk space. Ensure /data/torrents and /data/media are on the SAME filesystem."
+  log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
   exit 0
 fi
 

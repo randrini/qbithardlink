@@ -6,9 +6,11 @@ venv/
 
 # Classifier runtime state
 .classifier_state.json
+state/
 
 # Logs
 *.log
+logs/
 
 # Secrets — never commit real keys/passwords
 .env

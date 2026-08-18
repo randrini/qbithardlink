@@ -113,8 +113,10 @@ def _flaresolverr_get(url, max_timeout=15000):
     if not _flaresolverr_available():
         return None
     try:
+        base = FLARESOLVERR_URL.rstrip("/")
+        endpoint = f"{base}/v1" if not base.endswith("/v1") else base
         resp = _requests.post(
-            f"{FLARESOLVERR_URL}/v1",
+            endpoint,
             json={"cmd": "request.get", "url": url, "maxTimeout": max_timeout},
             timeout=max_timeout / 1000 + 5,
         )

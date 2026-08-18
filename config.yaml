@@ -7,7 +7,7 @@
 qb:
   url: "http://192.168.1.116:8084"
   user: "bidalos"
-  password: "your-password"   # or set QB_PASS env var
+  password: ""                 # must set QB_PASS env var or config.local.yaml
   source_category: "books"    # category the daemon watches (or set QB_SOURCE_CATEGORY)
 
 # ── Library / hardlinking ─────────────────────────────────────────────────
@@ -60,7 +60,7 @@ tag_overrides:
 metadata:
   enabled: true
   timeout_seconds: 25        # max time to spend querying providers per title
-  flaresolverr_url: "http://192.168.1.116:8193/v1"
+  flaresolverr_url: "http://192.168.1.116:8193"
   google_books_api_key: ""    # or set GOOGLE_BOOKS_API_KEY env var
   comicvine_api_key: ""       # or set COMICVINE_API_KEY env var
   providers:

@@ -1,42 +1,54 @@
 # qBittorrent category classifier — Docker Compose
 # Build & run:  docker compose up -d --build
-# The classifier watches qBittorrent for "books" torrents and sets the category.
-# Uses FlareSolverr (http://10.0.0.42:8191) to bypass anti-bot on BD providers.
+#
+# The daemon watches the qBittorrent category set in QB_SOURCE_CATEGORY and
+# classifies each torrent as manga/webtoon/comics/bd/light-novel/ebooks.
+# It then hardlinks the completed content into LIBRARY_ROOT.
+#
+# REQUIRED: create a .env file (see .env.example) and edit the ADJUST paths below.
 services:
   classifier:
     build: .
     container_name: qbit-classifier
     restart: unless-stopped
     environment:
-      - PUID=99
-      - PGID=100
-      - QB_URL=http://192.168.1.116:8084
-      - QB_USER=bidalos
-      - QB_PASS=${QB_PASS:?Set QB_PASS in a .env file or export it before running docker compose up}
-      - QB_SOURCE_CATEGORY=books
-      - LIBRARY_ROOT=/data/media/books
-      - HARDLINK_SCRIPT=/app/hardlink.sh
-      - HARDLINK_ENABLED=true
-      - LOG_FILE=/app/logs/classifier.log
-      - LOG_LEVEL=INFO
-      - POLL_INTERVAL=10
-      # FlareSolverr endpoint for Cloudflare/anti-bot protected BD providers
-      - FLARESOLVERR_URL=http://10.0.0.42:8191
-      # Google Books API key (improves ebook/comic/manga resolution)
-      # Set via .env or export — do NOT commit a real key here.
+      # User/Group that will own created files/hardlinks (Unraid default: nobody/users).
+      - PUID=${PUID:-99}
+      - PGID=${PGID:-100}
+      # qBittorrent WebUI credentials (QB_PASS must be set in .env).
+      - QB_URL=${QB_URL:-http://192.168.1.116:8084}
+      - QB_USER=${QB_USER:-bidalos}
+      - QB_PASS=${QB_PASS:?Set QB_PASS in .env or export it before running docker compose up}
+      # Category to watch; new book/comic torrents should start here.
+      - QB_SOURCE_CATEGORY=${QB_SOURCE_CATEGORY:-books}
+      # Destination root for hardlinks (must match the bind-mount below).
+      - LIBRARY_ROOT=${LIBRARY_ROOT:-/data/media/books}
+      - HARDLINK_SCRIPT=${HARDLINK_SCRIPT:-/app/hardlink.sh}
+      - HARDLINK_ENABLED=${HARDLINK_ENABLED:-true}
+      # Logging.
+      - LOG_FILE=${LOG_FILE:-/app/logs/classifier.log}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - POLL_INTERVAL=${POLL_INTERVAL:-10}
+      # Trawl/FlareSolverr endpoint for JS-protected BD providers.
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://192.168.1.116:8193}
+      # Optional API keys.
       - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
+      - COMICVINE_API_KEY=${COMICVINE_API_KEY:-}
     volumes:
+      # Source code (bind-mounted for easy updates; the Dockerfile also copies them).
       - ./classifier.py:/app/classifier.py:ro
       - ./metadata.py:/app/metadata.py:ro
       - ./config.py:/app/config.py:ro
       - ./config.yaml:/app/config.yaml:ro
+      - ./hardlink.sh:/app/hardlink.sh:ro
       # Optional local secrets (git-ignored) — create config.local.yaml if needed.
       - ./config.local.yaml:/app/config.local.yaml:ro
       # Persistent logs (classifier.log + hardlink.log).
       - ./logs:/app/logs
       # Persistent idempotency state (file lives inside this directory).
       - ./state:/app/state
-      # qBittorrent downloads — ADJUST to your actual download path.
+      # ═══ ADJUST these to match your Unraid shares ═══
+      # qBittorrent downloads — must be the SAME filesystem as LIBRARY_ROOT for hardlinks.
       - /mnt/user/data/torrents:/data/torrents
-      # Library destination for hardlinks — ADJUST to your media library path.
+      # Library destination for hardlinks.
       - /mnt/user/media/books:/data/media/books

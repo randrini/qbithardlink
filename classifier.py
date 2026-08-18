@@ -317,10 +317,16 @@ def process_once(qb, use_metadata=False, state=None):
         state.add(h)
         changed = True
         log.info("[%s] → %s (conf=%.2f) %s", t.get("name"), cat, conf, reasons)
+        # Save state immediately after each successful classification so a
+        # later crash does not cause re-processing / duplicate hardlinks.
+        _save_state(state)
 
         # Hardlink the completed content into the library (if enabled).
         if hardlink_enabled:
-            content_path = t.get("content_path") or (
+            # Prefer the save_path root (works for both single-file and
+            # multi-file torrents). content_path may be a single file inside a
+            # folder torrent and would miss the rest.
+            content_path = t.get("save_path") or t.get("content_path") or (
                 os.path.join(t.get("save_path", ""), t.get("name", "")) if t.get("save_path") and t.get("name") else None
             )
             if content_path:
@@ -347,8 +353,6 @@ def process_once(qb, use_metadata=False, state=None):
             else:
                 log.warning("hardlink enabled but no content_path/save_path for %s", t.get("name"))
 
-    if changed:
-        _save_state(state)
     return state
 
 

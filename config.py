@@ -22,7 +22,7 @@ DEFAULTS = {
     "qb": {
         "url": "http://192.168.1.116:8084",
         "user": "bidalos",
-        "password": "your-password",
+        "password": "",  # must be set via QB_PASS env or config.local.yaml
         "source_category": "books",
     },
     "library": {"root": "/data/media/books"},
@@ -31,17 +31,18 @@ DEFAULTS = {
     "poll_interval": 10,
     "thresholds": {"auto": 0.90, "review": 0.70},
     "default_category": "ebooks",
+    "metadata": {
+        "enabled": True,
+        "timeout_seconds": 25,
+        "flaresolverr_url": "http://192.168.1.116:8193",
+        "google_books_api_key": "",
+        "comicvine_api_key": "",
+        "providers": {},
+    },
     "tag_overrides": {
         "manga": "manga", "manhwa": "manhwa", "webtoon": "webtoon",
         "comics": "comics", "bd": "bd", "light-novel": "light-novel",
         "ebooks": "ebooks", "mags": "mags", "audiobooks": "audiobooks",
-    },
-    "metadata": {
-        "enabled": True,
-        "flaresolverr_url": "http://10.0.0.42:8191",
-        "google_books_api_key": "",
-        "comicvine_api_key": "",
-        "providers": {},
     },
     "rules": {},
 }
@@ -100,7 +101,7 @@ def _env_override(cfg):
     if os.environ.get("LOG_FILE"):
         cfg["log"]["file"] = os.environ["LOG_FILE"]
     if os.environ.get("LOG_LEVEL"):
-        cfg["log"]["level"] = os.environ["LOG_LEVEL"]
+        cfg["log"]["level"] = os.environ["LOG_LEVEL"].strip().upper()
     if os.environ.get("POLL_INTERVAL"):
         cfg["poll_interval"] = int(os.environ["POLL_INTERVAL"])
     if os.environ.get("FLARESOLVERR_URL"):
