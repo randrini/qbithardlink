@@ -1648,7 +1648,15 @@ def _llm_request(payload):
 
 
 def _llm_extract_content(raw_text):
-    """Extract the assistant message text from an OpenAI/Ollama response."""
+    """Extract the assistant message text or direct JSON object from an LLM response.
+
+    Handles:
+    - OpenAI-compatible: choices[0].message.content
+    - Ollama /api/chat: message.content
+    - Ollama /api/generate: response
+    - Gemini v1beta with responseMimeType=application/json: the response body
+      IS the JSON object directly, not wrapped in candidates[].content.parts[].
+    """
     if not raw_text:
         return None
     try:
@@ -1657,6 +1665,9 @@ def _llm_extract_content(raw_text):
         return None
     if not isinstance(data, dict):
         return None
+    # Gemini direct JSON response (responseMimeType=application/json).
+    if "format" in data and "sources" in data:
+        return raw_text
     # OpenAI-compatible: choices[0].message.content
     choices = data.get("choices")
     if isinstance(choices, list) and choices:
