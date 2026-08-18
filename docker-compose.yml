@@ -34,11 +34,11 @@ services:
       # Optional API keys.
       - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
       - COMICVINE_API_KEY=${COMICVINE_API_KEY:-}
-      # LLM final-arbiter (off by default; OpenAI-compatible endpoint, also
-      # works with Ollama's /v1). Set LLM_ENABLED=true to activate.
+      # LLM final-arbiter (off by default). Supports Gemini v1beta native API,
+      # OpenAI-compatible endpoints, and Ollama. Set LLM_ENABLED=true to activate.
       - LLM_ENABLED=${LLM_ENABLED:-false}
-      - LLM_ENDPOINT=${LLM_ENDPOINT:-http://host.docker.internal:11434/v1/chat/completions}
-      - LLM_MODEL=${LLM_MODEL:-llama3.2:3b}
+      - LLM_ENDPOINT=${LLM_ENDPOINT:-https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_TIMEOUT=${LLM_TIMEOUT:-30}
     volumes:

@@ -41,8 +41,8 @@ DEFAULTS = {
     },
     "llm": {
         "enabled": False,
-        "endpoint": "http://host.docker.internal:11434/v1/chat/completions",
-        "model": "llama3.2:3b",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "model": "gemini-2.0-flash",
         "api_key": "",
         "timeout": 30,
     },

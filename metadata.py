@@ -455,6 +455,100 @@ class MangaBakaProvider(Provider):
             return None
 
 
+class JikanProvider(Provider):
+    """Jikan (unofficial MyAnimeList API) — free, no key.
+
+    Endpoint: https://api.jikan.moe/v4/manga?q=...&limit=10
+    Public API with a ~3 req/sec rate limit. Format comes from the `type`
+    field (Manga/Manhwa/Manhua/Light Novel/Novel), with a webtoon override
+    for manhwa whose genres include webtoon.
+    """
+    id = "jikan"
+    display_name = "Jikan (MyAnimeList)"
+    types = {"manga", "webtoon", "light_novel", "book"}
+    rate_limit = 0.35  # ~3 req/sec
+    requires_corroboration = False
+
+    _BASE = "https://api.jikan.moe/v4/manga"
+
+    @staticmethod
+    def _format_from_type(mtype, genres):
+        """Map Jikan `type` to our format string; None for unknown types."""
+        t = str(mtype or "").strip().lower()
+        genres_joined = " ".join(genres or []).lower()
+        if t == "manga":
+            return "manga"
+        if t == "manhwa":
+            return "webtoon" if "webtoon" in genres_joined else "manga"
+        if t == "manhua":
+            return "manga"
+        if t == "light novel":
+            return "light_novel"
+        if t == "novel":
+            return "book"
+        return None
+
+    def lookup(self, title):
+        if not HAS_REQUESTS:
+            return None
+        self._throttle()
+        try:
+            resp = _requests.get(self._BASE, params={"q": title, "limit": 10}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if not isinstance(data, dict) or data.get("error") or data.get("status") not in (None, 200):
+                log.debug("Jikan API error response: %s", str(data)[:200])
+                return None
+            items = data.get("data") or []
+            if not items:
+                return None
+
+            best = None
+            best_score = 0.0
+            best_t = ""
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                candidates = [item.get("title"), item.get("title_english"),
+                              item.get("title_japanese")]
+                for syn in item.get("synonyms") or []:
+                    if isinstance(syn, str) and syn.strip():
+                        candidates.append(syn)
+                for t in candidates:
+                    if not t:
+                        continue
+                    score = _title_match_score(str(t), title)
+                    if score > best_score:
+                        best_score = score
+                        best = item
+                        best_t = str(t)
+
+            if best is None or best_score < 0.6:
+                return None
+
+            genres = [g.get("name") for g in best.get("genres") or []
+                      if isinstance(g, dict) and g.get("name")]
+            fmt = self._format_from_type(best.get("type"), genres)
+            if not fmt:
+                log.debug("Jikan: unknown type %r for %r", best.get("type"), best_t)
+                return None
+
+            # Confidence from title match + MAL popularity.
+            scored_by = best.get("scored_by") or 0
+            confidence = 0.7 + 0.1 * best_score
+            if scored_by > 1000:
+                confidence += 0.1
+            confidence = min(confidence, 0.95)
+
+            return self._candidate(
+                title=best_t, format=fmt, genres=genres,
+                confidence=confidence,
+            )
+        except Exception as e:
+            log.debug("Jikan lookup failed: %s", e)
+            return None
+
+
 # ════════════════════════════════════════════════════════════════════════
 # EBOOK providers
 # ════════════════════════════════════════════════════════════════════════
@@ -1010,6 +1104,7 @@ def _provider_rate_limit(pid, default):
 _SIGNAL_PROVIDERS = {
     "MANGADEX": {"manga"},
     "MANGABAKA": {"manga", "light_novel"},
+    "jikan": {"manga", "webtoon", "light_novel"},
     "SHIKIMORI": {"manga", "light_novel"},
     "KITSU": {"manga"},
     "RANOBEDB": {"manga", "light_novel"},
@@ -1050,6 +1145,10 @@ def _build_providers(google_books_key=None, comicvine_key=None, signals=None):
     if _provider_enabled("mangabaka"):
         p = MangaBakaProvider()
         p.rate_limit = _provider_rate_limit("mangabaka", p.rate_limit)
+        providers.append(p)
+    if _provider_enabled("jikan"):
+        p = JikanProvider()
+        p.rate_limit = _provider_rate_limit("jikan", p.rate_limit)
         providers.append(p)
 
     # 2. Ebooks — fast, public APIs
@@ -1469,8 +1568,10 @@ def _parse_llm_json(text):
 def _llm_request(payload):
     """POST a chat payload to the configured endpoint.
 
-    Prefers OpenAI-compatible /v1/chat/completions when the URL ends in
-    `/v1/chat/completions`; otherwise uses Ollama's native /api/chat format.
+    Supports three backends:
+    - Gemini v1beta native: endpoint contains "generativelanguage.googleapis.com"
+    - OpenAI-compatible: endpoint ends with /v1/chat/completions
+    - Ollama native: everything else (assumes /api/chat format)
     Returns the raw response text or None on failure.
     """
     if not HAS_REQUESTS:
@@ -1478,8 +1579,49 @@ def _llm_request(payload):
         return None
     endpoint = _LLM_ENDPOINT
     headers = {"Content-Type": "application/json"}
-    if _LLM_API_KEY:
-        headers["Authorization"] = f"Bearer {_LLM_API_KEY}"
+    api_key = _LLM_API_KEY
+
+    # ── Gemini v1beta native API ─────────────────────────────────────────
+    if "generativelanguage.googleapis.com" in endpoint:
+        # Build the Gemini request body.
+        prompt_text = ""
+        for msg in payload.get("messages", []):
+            if msg.get("role") == "user":
+                prompt_text = msg.get("content", "")
+                break
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.0,
+                "maxOutputTokens": 300,
+            },
+        }
+        # The endpoint must include the model path and :generateContent.
+        # Expected format:
+        #   https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent
+        # The API key is passed as a URL parameter.
+        sep = "&" if "?" in endpoint else "?"
+        url = f"{endpoint}{sep}key={api_key}" if api_key else endpoint
+        try:
+            resp = _requests.post(url, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            # Extract text from Gemini response: candidates[0].content.parts[0].text
+            candidates = data.get("candidates") or []
+            if candidates:
+                parts = (candidates[0].get("content") or {}).get("parts") or []
+                if parts and parts[0].get("text"):
+                    return parts[0]["text"]
+            log.warning("Gemini response had no candidates/content for prompt")
+            return None
+        except Exception as e:
+            log.warning("Gemini request to %s failed: %s", endpoint, e)
+            return None
+
+    # ── OpenAI-compatible ─────────────────────────────────────────────────
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     if endpoint.rstrip("/").endswith("/v1/chat/completions"):
         body = {
