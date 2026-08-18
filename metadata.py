@@ -1006,11 +1006,39 @@ def _provider_rate_limit(pid, default):
     return float(s.get("rate_limit", default))
 
 
-def _build_providers(google_books_key=None, comicvine_key=None):
+#: Provider id → signal flags it serves (used for targeted provider selection).
+_SIGNAL_PROVIDERS = {
+    "MANGADEX": {"manga"},
+    "MANGABAKA": {"manga", "light_novel"},
+    "SHIKIMORI": {"manga", "light_novel"},
+    "KITSU": {"manga"},
+    "RANOBEDB": {"manga", "light_novel"},
+    "GOOGLEBOOKS": {"light_novel", "audiobook"},
+    "OPENLIBRARY": {"light_novel", "audiobook"},
+    "COMICVINE": {"comics", "bd"},
+    "PLANETEBD": {"comics", "bd"},
+    "BEDETHEQUE": {"comics", "bd"},
+    "BDTHEQUE": {"comics", "bd"},
+}
+
+
+def _provider_matches_signals(p, signals):
+    """True if provider `p` is in the targeted subset for any active signal."""
+    if not signals:
+        return False
+    sigs = _SIGNAL_PROVIDERS.get(p.id, set())
+    return any(signals.get(s) for s in sigs)
+
+
+def _build_providers(google_books_key=None, comicvine_key=None, signals=None):
     """Build provider list ordered by speed / reliability.
 
     Fast no-key API providers go first so that lookup_category can reach a 2-provider
     consensus quickly. JS/FlareSolverr-dependent providers are queried last.
+
+    When `signals` are present, only the providers relevant to those signals
+    are returned (targeted pass). With no signals, ALL providers are returned
+    in the default order.
     """
     providers = []
 
@@ -1067,7 +1095,14 @@ def _build_providers(google_books_key=None, comicvine_key=None):
         p = BDthequeProvider()
         p.rate_limit = _provider_rate_limit("bdtheque", p.rate_limit)
         providers.append(p)
-    return providers
+
+    if not signals:
+        return providers
+
+    # Targeted pass: keep only providers relevant to the active signals.
+    # Order within the targeted list follows the default order above.
+    targeted = [p for p in providers if _provider_matches_signals(p, signals)]
+    return targeted
 
 
 #: Known BD/comics/manga publishers/imprints used to disambiguate generic "book".
@@ -1197,27 +1232,11 @@ def _lookup_with_timeout(provider, title, timeout):
     return result[0]
 
 
-def lookup_category(title, google_books_key=None, comicvine_key=None):
-    """Query providers for a release title, return (category, confidence, provider, reason).
+def _query_providers(providers, title, per_call_timeout, deadline):
+    """Query a provider list, tally votes, return (votes, best_by_cat).
 
-    Uses PROVIDER VOTING: query providers in priority order, tally the categories
-    they return, and stop early once 2+ independent providers agree. Each
-    provider call is wrapped with a thread-level timeout so a single slow
-    provider cannot block the whole cascade.
-
-    Returns (None, 0.0, None, reason) if no provider resolves it.
+    Shared by the targeted and fallback phases of lookup_category.
     """
-    if not _META_ENABLED:
-        return None, 0.0, None, "metadata disabled in config"
-    if google_books_key is None:
-        google_books_key = GOOGLE_BOOKS_API_KEY or None
-    if comicvine_key is None:
-        comicvine_key = COMICVINE_API_KEY or None
-    providers = _build_providers(google_books_key, comicvine_key)
-    per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(providers), 1)
-    per_call_timeout = max(per_call_timeout, 10.0)  # slow providers throttle 2-3s before the HTTP call
-    deadline = time.time() + float(_cfg.get("metadata.timeout_seconds", 25))
-
     votes = {}   # category -> [provider_ids]
     best_by_cat = {}
     for p in providers:
@@ -1240,7 +1259,15 @@ def lookup_category(title, google_books_key=None, comicvine_key=None):
         # Early-exit: 2 independent providers agree -> consensus reached.
         if len(votes[cat]) >= 2:
             break
+    return votes, best_by_cat
 
+
+def _resolve_votes(votes, best_by_cat, providers):
+    """Apply the voting/consensus logic to a set of provider votes.
+
+    Returns (category, confidence, provider_ids, title) or
+    (None, 0.0, None, reason) when unresolved.
+    """
     if not votes:
         return None, 0.0, None, "no provider match"
 
@@ -1294,6 +1321,65 @@ def lookup_category(title, google_books_key=None, comicvine_key=None):
         return best_cat, conf, "+".join(voters), cand.get("title")
     # Disagreement with no 2-provider agreement -> unresolved, tag for review
     return None, 0.0, None, f"providers disagree: {dict(votes)}"
+
+
+def lookup_category(title, google_books_key=None, comicvine_key=None, signals=None):
+    """Query providers for a release title, return (category, confidence, provider, reason).
+
+    Two-phase, signal-driven routing:
+
+    Phase 1 (targeted): when `signals` are present, query only the providers
+    relevant to those signals. A single high-confidence (>=0.9) match from a
+    targeted provider is accepted immediately — no 2-provider consensus needed
+    for a strong targeted hit. Otherwise the normal consensus logic applies.
+
+    Phase 2 (fallback): if Phase 1 produced no result, query ALL providers with
+    the existing voting logic. This handles wrong or missing signals.
+
+    Each provider call is wrapped with a thread-level timeout so a single slow
+    provider cannot block the whole cascade.
+
+    Returns (None, 0.0, None, reason) if no provider resolves it.
+    """
+    if not _META_ENABLED:
+        return None, 0.0, None, "metadata disabled in config"
+    if google_books_key is None:
+        google_books_key = GOOGLE_BOOKS_API_KEY or None
+    if comicvine_key is None:
+        comicvine_key = COMICVINE_API_KEY or None
+
+    deadline = time.time() + float(_cfg.get("metadata.timeout_seconds", 25))
+
+    # ── Phase 1: targeted providers (signal-driven) ─────────────────────────
+    if signals:
+        targeted = _build_providers(google_books_key, comicvine_key, signals=signals)
+        if targeted:
+            per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(targeted), 1)
+            per_call_timeout = max(per_call_timeout, 10.0)
+            votes, best_by_cat = _query_providers(targeted, title, per_call_timeout, deadline)
+
+            # A single high-confidence match from a targeted provider is
+            # accepted immediately (signals already narrowed the domain).
+            if best_by_cat:
+                strong_cat, strong_cand = max(
+                    best_by_cat.items(), key=lambda kv: kv[1].get("confidence", 0.0)
+                )
+                if strong_cand.get("confidence", 0.0) >= 0.9:
+                    conf = min(strong_cand.get("confidence", 0.9), 1.0)
+                    return strong_cat, conf, strong_cand.get("provider"), strong_cand.get("title")
+
+            # Otherwise use the normal consensus logic on the targeted votes.
+            cat, conf, prov, title = _resolve_votes(votes, best_by_cat, targeted)
+            if cat:
+                return cat, conf, prov, title
+
+    # ── Phase 2: fallback to ALL providers (existing voting logic) ─────────
+    providers = _build_providers(google_books_key, comicvine_key)
+    per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(providers), 1)
+    per_call_timeout = max(per_call_timeout, 10.0)  # slow providers throttle 2-3s before the HTTP call
+
+    votes, best_by_cat = _query_providers(providers, title, per_call_timeout, deadline)
+    return _resolve_votes(votes, best_by_cat, providers)
 
 
 if __name__ == "__main__":

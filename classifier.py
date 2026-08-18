@@ -105,27 +105,163 @@ def has_jp_magazine(name):
     return bool(_JP_MAG_RE.search(name))
 
 
+# ── Release-name signal detection ────────────────────────────────────────
+# Signals are content-type hints extracted from the raw release name. They
+# let us (a) keep the relevant words in the cleaned search title and
+# (b) target a small subset of metadata providers first, falling back to all
+# providers when the signals are wrong or missing.
+_MANGA_TOKENS = {"manga", "manhwa", "webtoon", "shonen", "shojo", "seinen", "josei"}
+_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "cbz", "cbr"}
+_COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo"}
+_BD_TOKENS = {
+    "bd", "bande dessinee", "tome", "franco belge", "integrale", "glenat",
+    "dupuis", "casterman", "le lombard", "dargaud", "delcourt", "bamboo",
+    "albin michel", "soleil", "tonkam", "ki-oon", "jungle",
+}
+_LN_TOKENS = {"light novel", "ln"}
+_AUDIOBOOK_TOKENS = {"audiobook", "m4b"}
+_FRENCH_TOKENS = {"french", "fr", "vostfr", "truefrench"}
+#: French accented characters commonly found in BD/comic titles but rare in
+#: English ebook releases. When present with no other strong signal, they
+#: suggest querying BD/comic providers first.
+_FRENCH_ACCENT_RE = re.compile(r"[éèêëàâùûîôçœæ]")
+#: Words that suggest a music release rather than an audiobook (mp3 alone is weak).
+_MUSIC_CONTEXT_TOKENS = {
+    "flac", "wav", "ogg", "lossless", "discography", "ost", "soundtrack",
+    "album", "mixtape", "vinyl", "cd rip", "various artists",
+}
+
+
+def _has_any_token(name, tokens):
+    """True if any token appears as a whole word in the normalized name."""
+    norm = normalize(name)
+    for tok in tokens:
+        if re.search(rf"(?i)\b{re.escape(tok)}\b", norm):
+            return True
+    return False
+
+
+def extract_signals(name):
+    """Detect content-type signals from a raw release name.
+
+    Returns a dict with boolean flags (manga, comics, bd, light_novel,
+    audiobook, french) plus a `matched` list of the tokens that fired, for
+    logging.
+    """
+    signals = {
+        "manga": False, "comics": False, "bd": False,
+        "light_novel": False, "audiobook": False, "french": False,
+        "matched": [],
+    }
+
+    if has_cjk(name):
+        signals["manga"] = True
+        signals["matched"].append("cjk")
+
+    if _has_any_token(name, _MANGA_TOKENS):
+        signals["manga"] = True
+        signals["matched"].append("manga-token")
+
+    if _has_any_token(name, _COMIC_TOKENS) or _has_any_token(name, _COMIC_PUBLISHERS):
+        signals["comics"] = True
+        signals["matched"].append("comics-token")
+
+    if _has_any_token(name, _BD_TOKENS):
+        # "tome" is a French volume marker that also appears in audiobook
+        # releases; don't let it fire a BD signal when the release is clearly
+        # an audiobook.
+        if not (_has_any_token(name, _AUDIOBOOK_TOKENS) or _has_any_token(name, {"mp3"})):
+            signals["bd"] = True
+            signals["matched"].append("bd-token")
+
+    if _has_any_token(name, _LN_TOKENS):
+        signals["light_novel"] = True
+        signals["matched"].append("ln-token")
+
+    if _has_any_token(name, _AUDIOBOOK_TOKENS):
+        signals["audiobook"] = True
+        signals["matched"].append("audiobook-token")
+    elif _has_any_token(name, {"mp3"}) and not _has_any_token(name, _MUSIC_CONTEXT_TOKENS):
+        signals["audiobook"] = True
+        signals["matched"].append("audiobook-token")
+
+    if _has_any_token(name, _FRENCH_TOKENS):
+        signals["french"] = True
+        signals["matched"].append("french-token")
+
+    # French accented characters (é, è, ê, à, ç, etc.) are a weak signal
+    # for BD/comics. Only activate when no stronger signal is present and
+    # the title looks like a short proper name (not an English ebook dump).
+    if not any([signals["manga"], signals["comics"], signals["bd"],
+                signals["light_novel"], signals["audiobook"]]):
+        if _FRENCH_ACCENT_RE.search(name):
+            signals["bd"] = True
+            signals["french"] = True
+            signals["matched"].append("french-accent")
+
+    return signals
+
+
 # ── Release-name cleaning for metadata lookup ────────────────────────────
-# Strip format tags, release groups, years, and volume markers so the
-# remaining title matches a metadata provider.
-_META_NOISE = re.compile(
-    r"(?i)"
-    r"\[(?:epub|pdf|cbz|cbr|mobi|azw3?|m4b|aac|mp3|int?egrale|collection|bonus|scan|retail|web|hybrid|raw)\]"
-    r"|\.(?:epub|pdf|cbz|cbr|mobi|azw3?|m4b|aac|mp3)\b"
-    r"|[-_ ](?:NOTAG|NoTag|notag|TRADEME|kop1|AmisMed|PiXeL|RACHE|pRO|Pro|DiVER|iDiB|CTO|21A1|aKraa|NoTag|ebdz|Team-Moi|NoFace696)\b"
-    r"|\b(?:19|20)\d{2}\b"
-    r"|\bT\d{1,4}\b"
-    r"|\b(?:FR|FRENCH|ENGLISH|iTALiAN|JP|JPN|KR|KOR|CN|CHN)\b"
-    r"|\b(?:RETAiL|SCAN|eBOOK|eBook|ebook|AUDIOBOOK|HYBRiD|HYBRID|MANGA|COMICS|BD)\b"
-    r"|\b(?:vol\.?\s*\d+|tome\s*\d+|part\s*\d+)\b"
+# Less aggressive than before: extensions, release groups, years, volume
+# markers, and language/format noise are always stripped, but content-type
+# words that are active signals (e.g. "Manga", "BD", "Comics") are kept so
+# providers can use them to disambiguate.
+_META_EXT_RE = re.compile(r"\.(?:epub|pdf|cbz|cbr|mobi|azw3?|m4b|aac|mp3)\b", re.I)
+_META_TAG_RE = re.compile(
+    r"\[(?:epub|pdf|cbz|cbr|mobi|azw3?|m4b|aac|mp3|int?egrale|collection|bonus|scan|retail|web|hybrid|raw)\]",
+    re.I,
 )
+_META_GROUP_RE = re.compile(
+    r"[-_ ](?:NOTAG|TRADEME|kop1|AmisMed|PiXeL|RACHE|PRO|DiVER|iDiB|CTO|21A1|aKraa|ebdz|Team-Moi|NoFace696)\b",
+    re.I,
+)
+_META_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+_META_VOL_RE = re.compile(
+    r"\b(?:vol\.?\s*\d+|tome\s*\d+|part\s*\d+|ch\.?\s*\d+(?:\s*[-–]\s*\d+)?"
+    r"|v\d{1,3}(?:\s*[-–]\s*\d+)?|t\d{1,4}(?:\.\d+)?|to\d{1,4}(?:\.\d+)?)\b",
+    re.I,
+)
+#: Language / format noise words — always stripped (not content signals).
+_META_LANG_RE = re.compile(
+    r"\b(?:FR|FRENCH|ENGLISH|iTALiAN|JP|JPN|KR|KOR|CN|CHN|VOSTFR|TRUEFRENCH"
+    r"|RETAiL|SCAN|eBOOK|HYBRiD|HYBRID|WEB)\b",
+    re.I,
+)
+#: Content-type words stripped ONLY when the matching signal is absent.
+_META_CONTENT_WORDS = {
+    "manga": re.compile(r"\bMANGA\b", re.I),
+    "comics": re.compile(r"\bCOMICS?\b", re.I),
+    "bd": re.compile(r"\bBD\b", re.I),
+    "light_novel": re.compile(r"\bLIGHT\s+NOVEL\b|\bLN\b", re.I),
+    "audiobook": re.compile(r"\bAUDIOBOOK\b", re.I),
+}
 
 
-def clean_release_name(name):
-    """Reduce a release name to a searchable title for metadata providers."""
-    cleaned = _META_NOISE.sub(" ", name)
+def clean_release_name(name, signals=None):
+    """Reduce a release name to a searchable title for metadata providers.
+
+    Always strips extensions, bracketed format tags, release groups, standalone
+    years, volume/chapter markers, and language/format noise. Words that are
+    active content-type signals (manga/comics/bd/light_novel/audiobook) are
+    kept so the provider search can use them.
+    """
+    signals = signals or {}
+    cleaned = _META_EXT_RE.sub(" ", name)
     cleaned = re.sub(r"[._]+", " ", cleaned)  # dots/underscores → spaces
+    cleaned = _META_TAG_RE.sub(" ", cleaned)
+    cleaned = _META_GROUP_RE.sub(" ", cleaned)
+    cleaned = _META_YEAR_RE.sub(" ", cleaned)
+    cleaned = _META_VOL_RE.sub(" ", cleaned)
+    cleaned = _META_LANG_RE.sub(" ", cleaned)
+    for sig, pat in _META_CONTENT_WORDS.items():
+        if not signals.get(sig):
+            cleaned = pat.sub(" ", cleaned)
+    # Drop empty brackets left behind by stripped volume markers (e.g. "[TO1 TO26]").
+    cleaned = re.sub(r"\[\s*\]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # Drop dangling separators left behind by stripped tokens (e.g. "Part 05 Vol 01 -").
+    cleaned = re.sub(r"\s*[-–]\s*$", "", cleaned).strip()
     return cleaned
 
 
@@ -163,11 +299,17 @@ def classify(name, tags=None, use_metadata=False):
         return "manga", 0.95, ["CJK characters"]
 
     # 1. Metadata lookup (authoritative). Strip noise → query → category.
+    #    Signals from the raw release name target a small provider subset
+    #    first; if that fails, metadata.py falls back to all providers.
     if use_metadata and HAS_METADATA and lookup_category is not None:
         try:
-            cat, conf, prov, title = lookup_category(clean_release_name(name))
+            signals = extract_signals(name)
+            cat, conf, prov, title = lookup_category(
+                clean_release_name(name, signals), signals=signals
+            )
             if cat:
-                reasons.append(f"metadata:{prov} → {title!r}")
+                sig_str = ",".join(signals.get("matched") or [])
+                reasons.append(f"metadata:{prov} → {title!r} (signals: {sig_str})")
                 return cat, conf, reasons
         except Exception as e:
             reasons.append(f"metadata error: {e}")
