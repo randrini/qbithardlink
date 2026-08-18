@@ -141,8 +141,95 @@ def _has_any_token(name, tokens):
     return False
 
 
-def extract_signals(name):
-    """Detect content-type signals from a raw release name.
+def _extract_extension_signals(files):
+    """Infer signals from the file extensions inside the torrent.
+
+    `files` is the qBittorrent `torrents/files` response: a list of dicts
+    with a `name` key (relative path). The dominant non-trivial extension
+    wins. Hidden/support files (.nfo, .jpg covers, .sfv) are ignored.
+    """
+    signals = {
+        "manga": False, "comics": False, "bd": False,
+        "light_novel": False, "audiobook": False, "french": False,
+        "matched": [],
+    }
+    ext_counts = {}
+    skip_exts = {".nfo", ".sfv", ".md5", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".txt", ".xml", ".json"}
+    for f in files:
+        path = str(f.get("name") or "")
+        ext = os.path.splitext(path)[1].lower()
+        if not ext or ext in skip_exts:
+            continue
+        ext_counts[ext] = ext_counts.get(ext, 0) + 1
+    if not ext_counts:
+        return signals
+
+    dominant_ext = None
+    dominant_count = 0
+    total = 0
+    for ext, count in ext_counts.items():
+        total += count
+        if count > dominant_count:
+            dominant_count = count
+            dominant_ext = ext
+    if dominant_ext is None or dominant_count < total * 0.5:
+        # No dominant format; mixed bag, don't draw a strong conclusion.
+        return signals
+
+    if dominant_ext in {".cbz", ".cbr"}:
+        signals["comics"] = True
+        signals["matched"].append(f"comic-archive:{dominant_ext}")
+    elif dominant_ext == ".epub":
+        signals["matched"].append("epub")
+    elif dominant_ext == ".mobi":
+        signals["matched"].append("mobi")
+    elif dominant_ext == ".pdf":
+        # PDF is ambiguous (ebook, comic, BD); only flag as a weak comics/bd
+        # hint so metadata can disambiguate.
+        signals["comics"] = True
+        signals["matched"].append("pdf")
+    elif dominant_ext in {".m4b", ".mp3", ".ogg", ".flac", ".aac"}:
+        signals["audiobook"] = True
+        signals["matched"].append(f"audio:{dominant_ext}")
+    return signals
+
+
+def _classify_by_extension(signals):
+    """Return a concrete category if the dominant file extension is
+    unambiguous; otherwise return None.
+
+    .cbz/.cbr are comic archives — disambiguate using other signals:
+      - French / BD markers → bd
+      - Manga/CJK markers    → manga
+      - Otherwise            → comics
+    .epub/.mobi default to ebooks unless light-novel signals exist.
+    .m4b/.mp3 (non-music)    → audiobook.
+    .pdf is ambiguous; let metadata or regex decide.
+    """
+    matched = signals.get("matched", [])
+    has_cbz_cbr = any(m.startswith("comic-archive:") for m in matched)
+    has_epub = "epub" in matched
+    has_mobi = "mobi" in matched
+    has_audio = any(m.startswith("audio:") for m in matched)
+
+    if has_audio:
+        return "audiobook", 0.95, ["dominant audio extension"]
+    if has_epub or has_mobi:
+        if signals.get("light_novel"):
+            return "light-novel", 0.9, [f"dominant {('epub' if has_epub else 'mobi')} + light-novel signal"]
+        return "ebooks", 0.9, [f"dominant {('epub' if has_epub else 'mobi')} extension"]
+    if has_cbz_cbr:
+        if signals.get("bd") or signals.get("french"):
+            return "bd", 0.95, ["dominant comic-archive + French/BD signal"]
+        if signals.get("manga"):
+            return "manga", 0.95, ["dominant comic-archive + manga signal"]
+        return "comics", 0.9, ["dominant comic-archive extension"]
+    return None
+
+
+def extract_signals(name, files=None):
+    """Detect content-type signals from a raw release name and optionally
+    the torrent's file list.
 
     Returns a dict with boolean flags (manga, comics, bd, light_novel,
     audiobook, french) plus a `matched` list of the tokens that fired, for
@@ -153,6 +240,16 @@ def extract_signals(name):
         "light_novel": False, "audiobook": False, "french": False,
         "matched": [],
     }
+
+    # First: inspect actual file extensions when the torrent content is known.
+    # Release names often omit cbz/cbr/epub/pdf, so the real format signal
+    # is in the files themselves.
+    if files:
+        file_signals = _extract_extension_signals(files)
+        for k, v in file_signals.items():
+            if k != "matched" and v:
+                signals[k] = True
+        signals["matched"].extend(file_signals.get("matched", []))
 
     if has_cjk(name):
         signals["manga"] = True
@@ -189,11 +286,11 @@ def extract_signals(name):
         signals["french"] = True
         signals["matched"].append("french-token")
 
-    # French accented characters (é, è, ê, à, ç, etc.) are a weak signal
-    # for BD/comics. Only activate when no stronger signal is present and
-    # the title looks like a short proper name (not an English ebook dump).
-    if not any([signals["manga"], signals["comics"], signals["bd"],
-                signals["light_novel"], signals["audiobook"]]):
+    # French accented characters (é, è, ê, à, ç, etc.) are a strong hint
+    # for BD/comics, even when the only other signal is a generic comic
+    # archive extension. Fire whenever there is no manga/LN/audiobook signal.
+    if not any([signals["manga"], signals["bd"], signals["light_novel"],
+                signals["audiobook"]]):
         if _FRENCH_ACCENT_RE.search(name):
             signals["bd"] = True
             signals["french"] = True
@@ -265,7 +362,7 @@ def clean_release_name(name, signals=None):
     return cleaned
 
 
-def classify(name, tags=None, use_metadata=False):
+def classify(name, tags=None, files=None, use_metadata=False):
     """Return (category, confidence, reasons).
 
     Priority:
@@ -298,12 +395,16 @@ def classify(name, tags=None, use_metadata=False):
             return "manga", 1.0, ["CJK + Japanese volume/magazine marker"]
         return "manga", 0.95, ["CJK characters"]
 
-    # 1. Metadata lookup (authoritative). Strip noise → query → category.
-    #    Signals from the raw release name target a small provider subset
-    #    first; if that fails, metadata.py falls back to all providers.
+    # 1. Extract signals from the release name and the torrent's actual file
+    #    list. These drive both metadata provider selection and extension-based
+    #    fallback classification.
+    signals = extract_signals(name, files=files)
+
+    # 1a. Metadata lookup (authoritative). Strip noise → query → category.
+    #    Signals target a small provider subset first; if that fails, metadata.py
+    #    falls back to all providers.
     if use_metadata and HAS_METADATA and lookup_category is not None:
         try:
-            signals = extract_signals(name)
             cat, conf, prov, title = lookup_category(
                 clean_release_name(name, signals), signals=signals
             )
@@ -313,6 +414,15 @@ def classify(name, tags=None, use_metadata=False):
                 return cat, conf, reasons
         except Exception as e:
             reasons.append(f"metadata error: {e}")
+
+    # 1b. Extension-based classification: when metadata doesn't resolve, the
+    #     actual file extension inside the torrent is a strong format signal.
+    #     This catches releases whose name hides the format (e.g. "...FR" with
+    #     a .cbr inside).
+    ext_result = _classify_by_extension(signals)
+    if ext_result:
+        ext_cat, ext_conf, ext_reasons = ext_result
+        return ext_cat, ext_conf, reasons + ext_reasons
 
     # 2. Regex rules (fast-path fallback when metadata is off/unavailable)
     for cat, patterns, min_score in RULES:
@@ -362,6 +472,14 @@ class QBClient:
 
     def get_torrents(self):
         return json.loads(self._request("torrents/info"))
+
+    def get_torrent_files(self, hash_hex):
+        """Return file list for a torrent, or empty list on error."""
+        try:
+            return json.loads(self._request("torrents/files", {"hash": hash_hex}))
+        except Exception as e:
+            log.debug("failed to fetch file list for %s: %s", hash_hex, e)
+            return []
 
     def set_category(self, hashes, category):
         # qBittorrent returns 409 if the category does not exist yet.
@@ -444,7 +562,13 @@ def process_once(qb, use_metadata=False, state=None):
             log.debug("skipping already-handled torrent %s (tags=%s, in_state=%s)", t.get("name"), tags, h in state)
             continue
 
-        cat, conf, reasons = classify(t.get("name", ""), t.get("tags", ""), use_metadata=use_metadata)
+        files = qb.get_torrent_files(h)
+        cat, conf, reasons = classify(
+            t.get("name", ""),
+            t.get("tags", ""),
+            files=files,
+            use_metadata=use_metadata,
+        )
         if cat == "skip":
             # Non-book torrent that somehow landed in "books"; leave it untouched.
             continue
