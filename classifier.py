@@ -363,50 +363,27 @@ def clean_release_name(name, signals=None):
     return cleaned
 
 
-def classify(name, tags=None, files=None, use_metadata=False):
-    """Return (category, confidence, reasons).
-
-    Priority:
-      0. Manual tag override (highest)
-      0.5 CJK characters → manga (very strong signal)
-      1. Metadata lookup (authoritative): strip noise from the release name,
-         query providers, use the provider's `format` as the category.
-         Formats/extensions are NOT deterministic (a PDF can be manga, ebook,
-         comic, or BD) — only provider metadata decides.
-      1b. Extension-based classification (dominant .cbz/.cbr/.epub/.m4b, ...)
-      1c. LLM final-arbiter (optional, off by default): one call to a
-         configurable LLM when metadata + extensions both fail.
-      2. Regex rules (fast-path fallback when metadata is off/unavailable)
-      3. books/review
-    """
-    tags = [t.strip().lower() for t in (tags or "").split(",") if t.strip()]
+def _preliminary_classify(name, tags, files, signals, use_metadata):
+    """Run the non-LLM classification cascade and return (cat, conf, reasons)."""
     reasons = []
-    norm = normalize(name)  # dots/underscores → spaces for content matching
+    norm = normalize(name)
 
-    # 0. Manual override via tag (highest priority)
+    # 0. Manual override via tag
     for tag in tags:
         if tag in TAG_OVERRIDES:
             return tag, 1.0, [f"manual tag override: {tag}"]
 
-    # 0.25 Skip obvious video/TV/movie/adult releases when run outside the
-    #    "books" category (e.g. selftest.py over all torrents).
+    # Skip obvious video releases
     if is_video(name):
         return "skip", 0.0, ["video release: skip"]
 
-    # 0.5 CJK characters → manga (very strong signal)
+    # CJK fast-path
     if has_cjk(name):
         if has_jp_volume(name) or has_jp_magazine(name):
             return "manga", 1.0, ["CJK + Japanese volume/magazine marker"]
         return "manga", 0.95, ["CJK characters"]
 
-    # 1. Extract signals from the release name and the torrent's actual file
-    #    list. These drive both metadata provider selection and extension-based
-    #    fallback classification.
-    signals = extract_signals(name, files=files)
-
-    # 1a. Metadata lookup (authoritative). Strip noise → query → category.
-    #    Signals target a small provider subset first; if that fails, metadata.py
-    #    falls back to all providers.
+    # Metadata lookup
     if use_metadata and HAS_METADATA and lookup_category is not None:
         try:
             cat, conf, prov, title = lookup_category(
@@ -419,44 +396,81 @@ def classify(name, tags=None, files=None, use_metadata=False):
         except Exception as e:
             reasons.append(f"metadata error: {e}")
 
-    # 1b. Extension-based classification: when metadata doesn't resolve, the
-    #     actual file extension inside the torrent is a strong format signal.
-    #     This catches releases whose name hides the format (e.g. "...FR" with
-    #     a .cbr inside).
+    # Extension-based classification
     ext_result = _classify_by_extension(signals)
     if ext_result:
         ext_cat, ext_conf, ext_reasons = ext_result
         return ext_cat, ext_conf, reasons + ext_reasons
 
-    # 1c. LLM final-arbiter: when metadata and extension signals both fail to
-    #     resolve the format, make one final call to the configured LLM. It
-    #     returns only a format + short reasons. Confidence is fixed at 0.85
-    #     (strong but not authoritative). Disabled by default.
-    if cfg.get("llm.enabled", False) and llm_classify is not None:
-        try:
-            llm_cat, llm_conf, llm_reasons = llm_classify(
-                clean_release_name(name, signals), files=files, signals=signals
-            )
-            if llm_cat:
-                return llm_cat, llm_conf, reasons + llm_reasons
-        except Exception as e:
-            reasons.append(f"llm error: {e}")
-
-    # 2. Regex rules (fast-path fallback when metadata is off/unavailable)
+    # Regex rules
     for cat, patterns, min_score in RULES:
         score = 0.0
+        cat_reasons = []
         for pattern, weight in patterns:
             if re.search(pattern, norm):
                 score += weight
-                reasons.append(f"{cat}:{pattern}")
+                cat_reasons.append(f"{cat}:{pattern}")
         if score >= min_score:
-            return cat, min(score, 1.0), reasons
+            return cat, min(score, 1.0), reasons + cat_reasons
 
-    # 3. Default: ebooks. If the whole cascade (metadata + regex) can't
-    #    determine the type, the safest default for a book/comics library is
-    #    ebooks — most undetermined releases are prose ebooks. Tag "review"
-    #    so the user can correct it.
+    # Default ebooks
     return DEFAULT_CATEGORY, 0.5, reasons + [f"cascade undetermined → default {DEFAULT_CATEGORY} (review)"]
+
+
+def classify(name, tags=None, files=None, use_metadata=False):
+    """Return (category, confidence, reasons).
+
+    Priority:
+      0. Manual tag override (highest)
+      0.5 CJK characters → manga (very strong signal)
+      1. Preliminary cascade: metadata → extensions → regex → default ebooks
+      2. LLM verification (optional): when enabled in 'verify' mode, the LLM
+         checks the preliminary result and overrides it if wrong.
+    """
+    tags = [t.strip().lower() for t in (tags or "").split(",") if t.strip()]
+    signals = extract_signals(name, files=files)
+
+    prelim_cat, prelim_conf, prelim_reasons = _preliminary_classify(
+        name, tags, files, signals, use_metadata
+    )
+
+    llm_enabled = cfg.get("llm.enabled", False)
+    llm_mode = str(cfg.get("llm.mode", "fallback")).strip().lower()
+    _llm = llm_classify if llm_classify is not None else None
+
+    # LLM fallback mode: only called when the cascade produced no high-confidence answer.
+    if llm_enabled and _llm and llm_mode == "fallback" and prelim_conf < 0.7:
+        try:
+            llm_cat, llm_conf, llm_reasons = _llm(
+                clean_release_name(name, signals), files=files, signals=signals
+            )
+            if llm_cat:
+                return llm_cat, llm_conf, prelim_reasons + llm_reasons
+        except Exception as e:
+            prelim_reasons.append(f"llm error: {e}")
+
+    # LLM verify mode: always ask the LLM to confirm or correct the preliminary category.
+    if llm_enabled and _llm and llm_mode == "verify":
+        try:
+            llm_cat, llm_conf, llm_reasons = _llm(
+                clean_release_name(name, signals),
+                files=files,
+                signals=signals,
+                preliminary={
+                    "category": prelim_cat,
+                    "confidence": prelim_conf,
+                    "reasons": prelim_reasons,
+                },
+            )
+            if llm_cat:
+                if llm_cat == prelim_cat:
+                    return prelim_cat, prelim_conf, prelim_reasons + ["llm-confirmed"] + llm_reasons
+                # LLM disagrees: trust the LLM verdict.
+                return llm_cat, llm_conf, [f"llm-override:{prelim_cat}→{llm_cat}"] + llm_reasons
+        except Exception as e:
+            prelim_reasons.append(f"llm error: {e}")
+
+    return prelim_cat, prelim_conf, prelim_reasons
 
 
 # ── qBittorrent API helpers ───────────────────────────────────────────────

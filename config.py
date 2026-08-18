@@ -41,6 +41,7 @@ DEFAULTS = {
     },
     "llm": {
         "enabled": False,
+        "mode": "fallback",  # "fallback" = only when cascade is uncertain; "verify" = always check
         "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
         "model": "gemini-2.0-flash",
         "api_key": "",
@@ -119,6 +120,8 @@ def _env_override(cfg):
         cfg["metadata"]["comicvine_api_key"] = os.environ["COMICVINE_API_KEY"]
     if os.environ.get("LLM_ENABLED"):
         cfg["llm"]["enabled"] = os.environ["LLM_ENABLED"].strip().lower() in ("1", "true", "yes", "on")
+    if os.environ.get("LLM_MODE"):
+        cfg["llm"]["mode"] = os.environ["LLM_MODE"].strip().lower()
     if os.environ.get("LLM_ENDPOINT"):
         cfg["llm"]["endpoint"] = os.environ["LLM_ENDPOINT"]
     if os.environ.get("LLM_MODEL"):

@@ -1674,16 +1674,21 @@ def _llm_extract_content(raw_text):
     return None
 
 
-def llm_classify(title, files=None, signals=None):
-    """Final-arbiter LLM classification.
+def llm_classify(title, files=None, signals=None, preliminary=None):
+    """LLM classification / verification.
 
-    Builds a short prompt from the cleaned title, file list, detected signals,
-    and any existing provider results, then asks the configured LLM for a JSON
-    verdict: {"format": "...", "sources": ["..."]}.
+    When `preliminary` is None, acts as a final-arbiter: builds a short prompt
+    from the cleaned title, file list, and detected signals, then asks the
+    configured LLM for a JSON verdict: {"format": "...", "sources": ["..."]}.
+
+    When `preliminary` is provided (dict with category/reasons/confidence), the
+    LLM is asked to verify that verdict and return the same JSON. If it
+    disagrees, the LLM's format is returned; if it agrees, the LLM returns the
+    same format plus confirmation sources.
 
     Returns (category, confidence, reasons) or (None, 0.0, []) when disabled,
-    unreachable, or the response is invalid. Confidence is fixed at 0.85 —
-    strong but not authoritative.
+    unreachable, or the response is invalid. Confidence is fixed at 0.85 for
+    an LLM override/confirmation — strong but not authoritative.
     """
     if not _llm_enabled():
         return None, 0.0, []
@@ -1714,15 +1719,30 @@ def llm_classify(title, files=None, signals=None):
         sig_parts.append("matched:" + ",".join(str(m) for m in matched[:10]))
     signals_str = ", ".join(sig_parts) if sig_parts else "none"
 
-    prompt = (
-        "You classify book/comics torrents. Given title and files, return JSON "
-        '{"format":"...","sources":["..."]}.\n'
-        "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
-        f"Title: {title}\n"
-        f"Files: {exts_str}\n"
-        f"Signals: {signals_str}\n"
-        "Be concise. Use only known facts from the title/files. Do not guess wildly."
-    )
+    if preliminary:
+        prompt = (
+            "You verify book/comics torrent classifications. The classifier "
+            f"proposed '{preliminary['category']}' (confidence {preliminary['confidence']:.2f}) "
+            f"for reasons: {preliminary['reasons']}.\n"
+            f"Title: {title}\n"
+            f"Files: {exts_str}\n"
+            f"Signals: {signals_str}\n"
+            "Return JSON {\"format\":\"...\",\"sources\":[\"...\"]}. "
+            "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
+            "If the proposed category is correct, return that format with sources confirming why. "
+            "If it is wrong, return the correct format with sources. "
+            "Be concise. Use only known facts from the title/files."
+        )
+    else:
+        prompt = (
+            "You classify book/comics torrents. Given title and files, return JSON "
+            '{"format":"...","sources":["..."]}.\n'
+            "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
+            f"Title: {title}\n"
+            f"Files: {exts_str}\n"
+            f"Signals: {signals_str}\n"
+            "Be concise. Use only known facts from the title/files. Do not guess wildly."
+        )
 
     raw = _llm_request({"messages": [{"role": "user", "content": prompt}]})
     content = _llm_extract_content(raw)
