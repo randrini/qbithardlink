@@ -1735,24 +1735,25 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
             "You verify book/comics torrent classifications. The classifier "
             f"proposed '{preliminary['category']}' (confidence {preliminary['confidence']:.2f}) "
             f"for reasons: {preliminary['reasons']}.\n"
-            f"Title: {title}\n"
+            f"Raw release name: {title}\n"
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
             "Return JSON {\"format\":\"...\",\"sources\":[\"...\"]}. "
             "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
-            "If the proposed category is correct, return that format with sources confirming why. "
+            "Identify the book/comic from the release name and your own knowledge. "
+            "If the proposed category matches the real format, return that format with sources confirming why. "
             "If it is wrong, return the correct format with sources. "
-            "Be concise. Use only known facts from the title/files."
+            "Be concise. A source can be 'title contains ...', 'publisher ...', 'series is known as ...', etc."
         )
     else:
         prompt = (
-            "You classify book/comics torrents. Given title and files, return JSON "
-            '{"format":"...","sources":["..."]}.\n'
+            "You classify book/comics torrents. Identify the actual book/comic from the release name and "
+            "return JSON {\"format\":\"...\",\"sources\":[\"...\"]}.\n"
             "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
-            f"Title: {title}\n"
+            f"Raw release name: {title}\n"
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
-            "Be concise. Use only known facts from the title/files. Do not guess wildly."
+            "Use your knowledge of published works. Be concise."
         )
 
     raw = _llm_request({"messages": [{"role": "user", "content": prompt}]})

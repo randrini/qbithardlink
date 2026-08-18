@@ -453,7 +453,7 @@ def classify(name, tags=None, files=None, use_metadata=False):
     if llm_enabled and _llm and llm_mode == "verify":
         try:
             llm_cat, llm_conf, llm_reasons = _llm(
-                clean_release_name(name, signals),
+                name,  # raw release name, not cleaned — LLM can read tags itself
                 files=files,
                 signals=signals,
                 preliminary={
