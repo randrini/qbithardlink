@@ -49,6 +49,7 @@ services:
       - ./config.py:/app/config.py:ro
       - ./config.yaml:/app/config.yaml:ro
       - ./hardlink.sh:/app/hardlink.sh:ro
+      - ./test_release.py:/app/test_release.py:ro
       # Optional local secrets (git-ignored) — create config.local.yaml if needed.
       - ./config.local.yaml:/app/config.local.yaml:ro
       # Persistent logs (classifier.log + hardlink.log).

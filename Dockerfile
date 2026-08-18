@@ -14,8 +14,9 @@ COPY config.py /app/config.py
 COPY config.yaml /app/config.yaml
 COPY hardlink.sh /app/hardlink.sh
 COPY corpus.txt /app/corpus.txt
+COPY test_release.py /app/test_release.py
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/hardlink.sh /app/entrypoint.sh && mkdir -p /app/logs
+RUN chmod +x /app/hardlink.sh /app/entrypoint.sh /app/test_release.py && mkdir -p /app/logs
 
 # Create a non-root user matching host PUID/PGID (defaults 99:100, common on Unraid).
 # If the GID/UID already exist in the base image, reuse them instead of failing.
