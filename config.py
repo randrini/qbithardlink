@@ -130,6 +130,8 @@ def _env_override(cfg):
         cfg["llm"]["api_key"] = os.environ["LLM_API_KEY"]
     if os.environ.get("LLM_TIMEOUT"):
         cfg["llm"]["timeout"] = int(os.environ["LLM_TIMEOUT"])
+    if os.environ.get("LLM_COOLDOWN_MINUTES"):
+        cfg["llm"]["cooldown_minutes"] = float(os.environ["LLM_COOLDOWN_MINUTES"])
     return cfg
 
 

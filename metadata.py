@@ -1507,17 +1507,28 @@ try:
     _LLM_MODEL = str(_cfg.get("llm.model", "") or "").strip()
     _LLM_API_KEY = str(_cfg.get("llm.api_key", "") or "").strip()
     _LLM_TIMEOUT = float(_cfg.get("llm.timeout", 30) or 30)
+    _LLM_COOLDOWN_MINUTES = float(_cfg.get("llm.cooldown_minutes", 60) or 60)
 except Exception:
     _LLM_ENABLED = False
     _LLM_ENDPOINT = ""
     _LLM_MODEL = ""
     _LLM_API_KEY = ""
     _LLM_TIMEOUT = 30.0
+    _LLM_COOLDOWN_MINUTES = 60.0
+
+#: Unix timestamp until which the LLM is temporarily disabled after a quota/rate-limit error.
+_llm_cooldown_until = 0.0
 
 
 def _llm_enabled():
-    """Whether the LLM final-arbiter is enabled (env/config)."""
-    return bool(_LLM_ENABLED and _LLM_ENDPOINT and _LLM_MODEL)
+    """Whether the LLM final-arbiter is enabled (env/config) and not in cooldown."""
+    if not (_LLM_ENABLED and _LLM_ENDPOINT and _LLM_MODEL):
+        return False
+    if time.time() < _llm_cooldown_until:
+        remaining = int(_llm_cooldown_until - time.time())
+        log.debug("LLM in cooldown for %ss; skipping", remaining)
+        return False
+    return True
 
 
 def _strip_markdown_fences(text):
@@ -1639,11 +1650,23 @@ def _llm_request(payload):
             "options": {"temperature": 0.0, "num_predict": 300},
         }
     try:
-        resp = _requests.post(endpoint, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+        resp = _requests.post(url, json=body, headers=headers, timeout=_LLM_TIMEOUT)
         resp.raise_for_status()
         return resp.text
     except Exception as e:
-        log.warning("LLM request to %s failed: %s", endpoint, e)
+        # Detect quota / rate-limit errors and enter cooldown so a single
+        # exhausted API key does not block all classifications.
+        status = getattr(getattr(e, "response", None), "status_code", 0)
+        text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
+        if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
+            global _llm_cooldown_until
+            _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
+            log.warning(
+                "LLM quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
+                status, _LLM_COOLDOWN_MINUTES,
+            )
+        else:
+            log.warning("LLM request to %s failed: %s", endpoint, e)
         return None
 
 

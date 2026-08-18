@@ -42,6 +42,7 @@ services:
       - LLM_MODEL=${LLM_MODEL:-gemini-flash-lite-latest}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_TIMEOUT=${LLM_TIMEOUT:-30}
+      - LLM_COOLDOWN_MINUTES=${LLM_COOLDOWN_MINUTES:-60}
     volumes:
       # Source code (bind-mounted for easy updates; the Dockerfile also copies them).
       - ./classifier.py:/app/classifier.py:ro

@@ -114,6 +114,7 @@ llm:
   model: "gemini-flash-lite-latest"
   api_key: ""          # your Gemini API key (or set LLM_API_KEY in .env)
   timeout: 30          # seconds per request
+  cooldown_minutes: 60 # how long to disable LLM after a quota/rate-limit error
 
 # ── Regex rules (fast-path fallback when metadata is off/unavailable) ─────
 # Each category has a list of (regex, weight) patterns and a min_score.
