@@ -8,5 +8,5 @@ qb:
   password: "your-real-password"       # or set QB_PASS env var
 
 metadata:
-  flaresolverr_url: "http://10.0.0.42:8191"   # Trawl API port on host (container 8191)
+  flaresolverr_url: "http://192.168.1.116:8193"   # Trawl API port on host (container 8191)
   google_books_api_key: ""                         # or set GOOGLE_BOOKS_API_KEY env var

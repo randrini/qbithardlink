@@ -30,7 +30,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - POLL_INTERVAL=${POLL_INTERVAL:-10}
       # Trawl/FlareSolverr endpoint for JS-protected BD providers.
-      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://10.0.0.42:8191}
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://192.168.1.116:8193}
       # Optional API keys.
       - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
       - COMICVINE_API_KEY=${COMICVINE_API_KEY:-}
