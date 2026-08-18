@@ -34,7 +34,7 @@ DEFAULTS = {
     "metadata": {
         "enabled": True,
         "timeout_seconds": 25,
-        "flaresolverr_url": "http://host.docker.internal:8191",
+        "flaresolverr_url": "http://10.0.0.42:8191",
         "google_books_api_key": "",
         "comicvine_api_key": "",
         "providers": {},
