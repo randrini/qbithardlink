@@ -38,10 +38,11 @@ log = logging.getLogger("classifier")
 # Optional metadata lookup (free/no-key providers). Imported lazily so the
 # classifier still works if metadata.py is missing or its deps are absent.
 try:
-    from metadata import lookup_category
+    from metadata import lookup_category, llm_classify
     HAS_METADATA = True
 except Exception:
     lookup_category = None
+    llm_classify = None
     HAS_METADATA = False
 
 # ── Configuration (from config.yaml, env-overridable) ────────────────────
@@ -372,6 +373,9 @@ def classify(name, tags=None, files=None, use_metadata=False):
          query providers, use the provider's `format` as the category.
          Formats/extensions are NOT deterministic (a PDF can be manga, ebook,
          comic, or BD) — only provider metadata decides.
+      1b. Extension-based classification (dominant .cbz/.cbr/.epub/.m4b, ...)
+      1c. LLM final-arbiter (optional, off by default): one call to a
+         configurable LLM when metadata + extensions both fail.
       2. Regex rules (fast-path fallback when metadata is off/unavailable)
       3. books/review
     """
@@ -423,6 +427,20 @@ def classify(name, tags=None, files=None, use_metadata=False):
     if ext_result:
         ext_cat, ext_conf, ext_reasons = ext_result
         return ext_cat, ext_conf, reasons + ext_reasons
+
+    # 1c. LLM final-arbiter: when metadata and extension signals both fail to
+    #     resolve the format, make one final call to the configured LLM. It
+    #     returns only a format + short reasons. Confidence is fixed at 0.85
+    #     (strong but not authoritative). Disabled by default.
+    if cfg.get("llm.enabled", False) and llm_classify is not None:
+        try:
+            llm_cat, llm_conf, llm_reasons = llm_classify(
+                clean_release_name(name, signals), files=files, signals=signals
+            )
+            if llm_cat:
+                return llm_cat, llm_conf, reasons + llm_reasons
+        except Exception as e:
+            reasons.append(f"llm error: {e}")
 
     # 2. Regex rules (fast-path fallback when metadata is off/unavailable)
     for cat, patterns, min_score in RULES:

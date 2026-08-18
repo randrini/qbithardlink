@@ -39,6 +39,13 @@ DEFAULTS = {
         "comicvine_api_key": "",
         "providers": {},
     },
+    "llm": {
+        "enabled": False,
+        "endpoint": "http://host.docker.internal:11434/v1/chat/completions",
+        "model": "llama3.2:3b",
+        "api_key": "",
+        "timeout": 30,
+    },
     "tag_overrides": {
         "manga": "manga", "manhwa": "manhwa", "webtoon": "webtoon",
         "comics": "comics", "bd": "bd", "light-novel": "light-novel",
@@ -110,6 +117,16 @@ def _env_override(cfg):
         cfg["metadata"]["google_books_api_key"] = os.environ["GOOGLE_BOOKS_API_KEY"]
     if os.environ.get("COMICVINE_API_KEY"):
         cfg["metadata"]["comicvine_api_key"] = os.environ["COMICVINE_API_KEY"]
+    if os.environ.get("LLM_ENABLED"):
+        cfg["llm"]["enabled"] = os.environ["LLM_ENABLED"].strip().lower() in ("1", "true", "yes", "on")
+    if os.environ.get("LLM_ENDPOINT"):
+        cfg["llm"]["endpoint"] = os.environ["LLM_ENDPOINT"]
+    if os.environ.get("LLM_MODEL"):
+        cfg["llm"]["model"] = os.environ["LLM_MODEL"]
+    if os.environ.get("LLM_API_KEY"):
+        cfg["llm"]["api_key"] = os.environ["LLM_API_KEY"]
+    if os.environ.get("LLM_TIMEOUT"):
+        cfg["llm"]["timeout"] = int(os.environ["LLM_TIMEOUT"])
     return cfg
 
 

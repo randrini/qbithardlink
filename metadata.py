@@ -1382,6 +1382,231 @@ def lookup_category(title, google_books_key=None, comicvine_key=None, signals=No
     return _resolve_votes(votes, best_by_cat, providers)
 
 
+# ════════════════════════════════════════════════════════════════════════
+# LLM final-arbiter classification
+# ════════════════════════════════════════════════════════════════════════
+#: Allowed LLM output formats → internal category strings.
+_LLM_FORMAT_TO_CATEGORY = {
+    "manga": "manga",
+    "webtoon": "webtoon",
+    "comics": "comics",
+    "comic": "comics",
+    "bd": "bd",
+    "light-novel": "light-novel",
+    "light_novel": "light-novel",
+    "ebooks": "ebooks",
+    "ebook": "ebooks",
+    "book": "ebooks",
+    "audiobook": "audiobook",
+    "audiobooks": "audiobook",
+}
+
+#: LLM settings (config.yaml `llm:` section, env-overridable).
+try:
+    _LLM_ENABLED = bool(_cfg.get("llm.enabled", False))
+    _LLM_ENDPOINT = str(_cfg.get("llm.endpoint", "") or "").strip()
+    _LLM_MODEL = str(_cfg.get("llm.model", "") or "").strip()
+    _LLM_API_KEY = str(_cfg.get("llm.api_key", "") or "").strip()
+    _LLM_TIMEOUT = float(_cfg.get("llm.timeout", 30) or 30)
+except Exception:
+    _LLM_ENABLED = False
+    _LLM_ENDPOINT = ""
+    _LLM_MODEL = ""
+    _LLM_API_KEY = ""
+    _LLM_TIMEOUT = 30.0
+
+
+def _llm_enabled():
+    """Whether the LLM final-arbiter is enabled (env/config)."""
+    return bool(_LLM_ENABLED and _LLM_ENDPOINT and _LLM_MODEL)
+
+
+def _strip_markdown_fences(text):
+    """Remove ```json ... ``` fences (and stray backticks) from an LLM reply."""
+    t = str(text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t)
+    return t.strip()
+
+
+def _parse_llm_json(text):
+    """Robustly parse a JSON object out of an LLM reply.
+
+    Tries json.loads directly, then strips markdown fences, then falls back
+    to extracting the first balanced {...} block.
+    """
+    t = _strip_markdown_fences(text)
+    if not t:
+        return None
+    try:
+        data = json.loads(t)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    # Fallback: find the first balanced {...} block.
+    start = t.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    for i in range(start, len(t)):
+        if t[i] == "{":
+            depth += 1
+        elif t[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    data = json.loads(t[start:i + 1])
+                    if isinstance(data, dict):
+                        return data
+                except Exception:
+                    pass
+                break
+    return None
+
+
+def _llm_request(payload):
+    """POST a chat payload to the configured endpoint.
+
+    Prefers OpenAI-compatible /v1/chat/completions when the URL ends in
+    `/v1/chat/completions`; otherwise uses Ollama's native /api/chat format.
+    Returns the raw response text or None on failure.
+    """
+    if not HAS_REQUESTS:
+        log.warning("LLM classification requested but `requests` is unavailable")
+        return None
+    endpoint = _LLM_ENDPOINT
+    headers = {"Content-Type": "application/json"}
+    if _LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {_LLM_API_KEY}"
+
+    if endpoint.rstrip("/").endswith("/v1/chat/completions"):
+        body = {
+            "model": _LLM_MODEL,
+            "messages": payload.get("messages"),
+            "temperature": 0.0,
+            "max_tokens": 300,
+        }
+    else:
+        # Ollama native /api/chat
+        body = {
+            "model": _LLM_MODEL,
+            "messages": payload.get("messages"),
+            "stream": False,
+            "options": {"temperature": 0.0, "num_predict": 300},
+        }
+    try:
+        resp = _requests.post(endpoint, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        log.warning("LLM request to %s failed: %s", endpoint, e)
+        return None
+
+
+def _llm_extract_content(raw_text):
+    """Extract the assistant message text from an OpenAI/Ollama response."""
+    if not raw_text:
+        return None
+    try:
+        data = json.loads(raw_text)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    # OpenAI-compatible: choices[0].message.content
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        msg = choices[0].get("message") or {}
+        content = msg.get("content")
+        if content:
+            return content
+    # Ollama /api/chat: message.content
+    msg = data.get("message") or {}
+    if msg.get("content"):
+        return msg["content"]
+    # Ollama /api/generate: response
+    if data.get("response"):
+        return data["response"]
+    return None
+
+
+def llm_classify(title, files=None, signals=None):
+    """Final-arbiter LLM classification.
+
+    Builds a short prompt from the cleaned title, file list, detected signals,
+    and any existing provider results, then asks the configured LLM for a JSON
+    verdict: {"format": "...", "sources": ["..."]}.
+
+    Returns (category, confidence, reasons) or (None, 0.0, []) when disabled,
+    unreachable, or the response is invalid. Confidence is fixed at 0.85 —
+    strong but not authoritative.
+    """
+    if not _llm_enabled():
+        return None, 0.0, []
+
+    # ── Build the prompt ────────────────────────────────────────────────────
+    file_exts = []
+    for f in files or []:
+        path = str(f.get("name") or "") if isinstance(f, dict) else str(f or "")
+        ext = os.path.splitext(path)[1].lower()
+        if ext:
+            file_exts.append(ext)
+    # De-duplicate while preserving order, cap the list.
+    seen = set()
+    exts = []
+    for e in file_exts:
+        if e not in seen:
+            seen.add(e)
+            exts.append(e)
+    exts_str = ", ".join(exts[:15]) if exts else "unknown"
+
+    signals = signals or {}
+    sig_parts = []
+    for key in ("manga", "comics", "bd", "light_novel", "audiobook", "french"):
+        if signals.get(key):
+            sig_parts.append(key)
+    matched = signals.get("matched") or []
+    if matched:
+        sig_parts.append("matched:" + ",".join(str(m) for m in matched[:10]))
+    signals_str = ", ".join(sig_parts) if sig_parts else "none"
+
+    prompt = (
+        "You classify book/comics torrents. Given title and files, return JSON "
+        '{"format":"...","sources":["..."]}.\n'
+        "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
+        f"Title: {title}\n"
+        f"Files: {exts_str}\n"
+        f"Signals: {signals_str}\n"
+        "Be concise. Use only known facts from the title/files. Do not guess wildly."
+    )
+
+    raw = _llm_request({"messages": [{"role": "user", "content": prompt}]})
+    content = _llm_extract_content(raw)
+    if not content:
+        log.warning("LLM returned no usable content for %r", title)
+        return None, 0.0, []
+
+    data = _parse_llm_json(content)
+    if not data:
+        log.warning("LLM returned unparseable JSON for %r: %r", title, content[:200])
+        return None, 0.0, []
+
+    fmt = str(data.get("format") or "").strip().lower()
+    cat = _LLM_FORMAT_TO_CATEGORY.get(fmt)
+    if not cat:
+        log.warning("LLM returned unknown format %r for %r", fmt, title)
+        return None, 0.0, []
+
+    sources = data.get("sources") or []
+    if isinstance(sources, str):
+        sources = [sources]
+    sources = [str(s).strip() for s in sources if str(s).strip()]
+    reasons = [f"llm:{cat} → " + ", ".join(sources) if sources else f"llm:{cat}"]
+    return cat, 0.85, reasons
+
+
 if __name__ == "__main__":
     import sys
     for t in sys.argv[1:]:
