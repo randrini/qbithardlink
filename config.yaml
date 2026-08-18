@@ -12,8 +12,10 @@ qb:
 
 # ── Library / hardlinking ─────────────────────────────────────────────────
 # Destination root for hardlink.sh (or set LIBRARY_ROOT).
+# Must be inside the same bind mount as qBittorrent downloads for hardlinks
+# to share the same inode (see docker-compose.yml /data/books layout).
 library:
-  root: "/data/media/books"
+  root: "/data/books/library"
 
 # Hardlink script invoked after a torrent is re-categorized (or set
 # HARDLINK_SCRIPT / HARDLINK_ENABLED).

@@ -15,24 +15,30 @@ if ! getent passwd "$PUID" >/dev/null 2>&1; then
     useradd -u "$PUID" -g "$PGID" -d /app -s /bin/bash appuser
 fi
 
-# Create / fix ownership of paths the app needs to write to (bind mounts may
-# arrive owned by root or a different host user).
-LIBRARY_ROOT="${LIBRARY_ROOT:-/data/media/books}"
-mkdir -p /app/logs /app/state "${LIBRARY_ROOT}"
+# Single shared bind mount: /data/books contains both qBittorrent downloads
+# and the media library. Hardlinks only work when source and destination are
+# inside the same filesystem as seen by the container.
+BOOKS_MOUNT="/data/books"
+DOWNLOAD_PATH="${DOWNLOAD_PATH:-/data/books/torrents}"
+LIBRARY_ROOT="${LIBRARY_ROOT:-/data/books/library}"
 
-if ! chown -R "${PUID}:${PGID}" /app/logs /app/state "${LIBRARY_ROOT}"; then
+# Auto-create the folder structure expected by qBittorrent and hardlink.sh.
+mkdir -p /app/logs /app/state "${BOOKS_MOUNT}" "${DOWNLOAD_PATH}" "${LIBRARY_ROOT}"
+
+# Fix ownership of writable paths.
+if ! chown -R "${PUID}:${PGID}" /app/logs /app/state "${BOOKS_MOUNT}"; then
     # On shares with root_squash (NFS / Unraid user-shares), root can't chown.
-    # Fall back to making the directories group-writable so the unprivileged
-    # user can still create category subdirectories.
+    # Fall back to making directories group-writable.
     echo "[entrypoint] chown failed (likely root_squash); falling back to chmod 2775"
-    chmod -R 2775 /app/logs /app/state "${LIBRARY_ROOT}" || true
+    chmod -R 2775 /app/logs /app/state "${BOOKS_MOUNT}" || true
 fi
 
-# Export library root under the name hardlink.sh expects.
+# Export paths for hardlink.sh.
 export LIBRARY_ROOT MEDIA_ROOT="${LIBRARY_ROOT}"
 export HARDLINK_LOG="/app/logs/hardlink.log"
 
-echo "[entrypoint] Running as ${PUID}:${PGID}; library root: ${LIBRARY_ROOT} ($(stat -c '%A %U:%G' "${LIBRARY_ROOT}"))"
+echo "[entrypoint] Running as ${PUID}:${PGID}; books mount: ${BOOKS_MOUNT} ($(stat -c '%A %U:%G' "${BOOKS_MOUNT}"))"
+echo "[entrypoint] Downloads: ${DOWNLOAD_PATH} | Library: ${LIBRARY_ROOT}"
 
 # Run the classifier as the configured unprivileged user.
 exec gosu "${PUID}:${PGID}" "$@"

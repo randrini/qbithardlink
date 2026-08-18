@@ -5,7 +5,10 @@
 # classifies each torrent as manga/webtoon/comics/bd/light-novel/ebooks.
 # It then hardlinks the completed content into LIBRARY_ROOT.
 #
-# REQUIRED: create a .env file (see .env.example) and edit the ADJUST paths below.
+# REQUIRED: create a .env file (see .env.example) and edit the ADJUST path below.
+# Layout for hardlinks: one host share is mounted at /data/books; qBittorrent
+# downloads live under /data/books/torrents and the library under
+# /data/books/library. Both are inside the same bind mount so hardlinks work.
 services:
   classifier:
     build: .
@@ -21,8 +24,8 @@ services:
       - QB_PASS=${QB_PASS:?Set QB_PASS in .env or export it before running docker compose up}
       # Category to watch; new book/comic torrents should start here.
       - QB_SOURCE_CATEGORY=${QB_SOURCE_CATEGORY:-books}
-      # Destination root for hardlinks (must match the bind-mount below).
-      - LIBRARY_ROOT=${LIBRARY_ROOT:-/data/media/books}
+      # Library root for hardlinks (must be under the same bind mount as downloads).
+      - LIBRARY_ROOT=${LIBRARY_ROOT:-/data/books/library}
       - HARDLINK_SCRIPT=${HARDLINK_SCRIPT:-/app/hardlink.sh}
       - HARDLINK_ENABLED=${HARDLINK_ENABLED:-true}
       # Logging.
@@ -59,8 +62,7 @@ services:
       - ./logs:/app/logs
       # Persistent idempotency state (file lives inside this directory).
       - ./state:/app/state
-      # ═══ ADJUST via .env: DOWNLOAD_PATH and LIBRARY_PATH ═══
-      # qBittorrent downloads — must be the SAME filesystem as LIBRARY_ROOT for hardlinks.
-      - ${DOWNLOAD_PATH:-/mnt/user/data/torrents}:/data/torrents
-      # Library destination for hardlinks.
-      - ${LIBRARY_PATH:-/mnt/user/media/books}:/data/media/books
+      # ═══ ADJUST via .env: BOOKS_SHARE_PATH ═══
+      # Single host share mounted at /data/books. Both downloads and library live
+      # inside it so hardlinks share the same inode. Use cache or array as you prefer.
+      - ${BOOKS_SHARE_PATH:-/mnt/user/data/books}:/data/books

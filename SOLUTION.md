@@ -32,14 +32,14 @@ Shelfarr / Shelfmark / InkDrop / manual add
   set qBit category    leave as "books" + tag "review"
         │
         ▼
-  qBittorrent AutoTMM  →  /data/torrents/books/<category>
+  qBittorrent AutoTMM  →  /data/books/torrents/<category>
         │
         │  download completes
         ▼
   hardlink script  (trusts category)
         │
         ▼
-  /data/media/books/<category>
+  /data/books/library/<category>
         │
         ▼
   qBittorrent seeds to ratio 1.0
@@ -69,14 +69,14 @@ Treat these as **content types**, not file formats. Standardize on singular name
 
 | Category | Meaning | qBit save path | Library path |
 |---|---|---|---|
-| `manga` | Japanese manga | `/data/torrents/books/manga` | `/data/media/books/manga` |
-| `manhwa` | Korean comics | `/data/torrents/books/manhwa` | `/data/media/books/manhwa` |
-| `webtoon` | Webtoon-format titles | `/data/torrents/books/webtoon` | `/data/media/books/webtoon` |
-| `comics` | US/English comics, graphic novels | `/data/torrents/books/comics` | `/data/media/books/comics` |
-| `bd` | Franco-Belgian / bande dessinée | `/data/torrents/books/bd` | `/data/media/books/bd` |
-| `light-novel` | Light novels | `/data/torrents/books/light-novel` | `/data/media/books/light-novel` |
-| `ebooks` | Ordinary prose/non-graphic ebooks | `/data/torrents/books/ebooks` | `/data/media/books/ebooks` |
-| `books` | Unknown / needs review (fallback) | `/data/torrents/books` | `/data/media/books/_unprocessed` |
+| `manga` | Japanese manga | `/data/books/torrents/manga` | `/data/books/library/manga` |
+| `manhwa` | Korean comics | `/data/books/torrents/manhwa` | `/data/books/library/manhwa` |
+| `webtoon` | Webtoon-format titles | `/data/books/torrents/webtoon` | `/data/books/library/webtoon` |
+| `comics` | US/English comics, graphic novels | `/data/books/torrents/comics` | `/data/books/library/comics` |
+| `bd` | Franco-Belgian / bande dessinée | `/data/books/torrents/bd` | `/data/books/library/bd` |
+| `light-novel` | Light novels | `/data/books/torrents/light-novel` | `/data/books/library/light-novel` |
+| `ebooks` | Ordinary prose/non-graphic ebooks | `/data/books/torrents/ebooks` | `/data/books/library/ebooks` |
+| `books` | Unknown / needs review (fallback) | `/data/books/torrents` | `/data/books/library/_unprocessed` |
 
 > **Note:** Your existing `mangas/` directory is an older convention. Standardize on `manga/`.
 
@@ -118,7 +118,7 @@ volumes:
   - /mnt/user/data:/data
 ```
 
-This is the single most important rule. If qBittorrent reports `/data/torrents/books/manga` but the hardlinker only sees that host dir as `/downloads`, hardlinks break.
+This is the single most important rule. If qBittorrent reports `/data/books/torrents/manga` but the hardlinker only sees that host dir as `/downloads`, hardlinks break.
 
 ---
 
@@ -142,7 +142,7 @@ curl -s -c /tmp/qb.cookies -b /tmp/qb.cookies \
 for cat in manga manhwa webtoon comics bd light-novel ebooks; do
   curl -s -b /tmp/qb.cookies \
     --data-urlencode "category=$cat" \
-    --data-urlencode "savePath=/data/torrents/books/$cat" \
+    --data-urlencode "savePath=/data/books/torrents/$cat" \
     "$QB_URL/api/v2/torrents/createCategory"
 done
 ```
@@ -396,14 +396,14 @@ fi
 
 # Category → library destination (source of truth).
 case "$torrentCategory" in
-  manga)        destDir="/data/media/books/manga" ;;
-  manhwa)       destDir="/data/media/books/manhwa" ;;
-  webtoon)      destDir="/data/media/books/webtoon" ;;
-  comics)       destDir="/data/media/books/comics" ;;
-  bd)           destDir="/data/media/books/bd" ;;
-  light-novel)  destDir="/data/media/books/light-novel" ;;
-  ebooks)       destDir="/data/media/books/ebooks" ;;
-  books)        destDir="/data/media/books/_unprocessed" ;;
+  manga)        destDir="/data/books/library/manga" ;;
+  manhwa)       destDir="/data/books/library/manhwa" ;;
+  webtoon)      destDir="/data/books/library/webtoon" ;;
+  comics)       destDir="/data/books/library/comics" ;;
+  bd)           destDir="/data/books/library/bd" ;;
+  light-novel)  destDir="/data/books/library/light-novel" ;;
+  ebooks)       destDir="/data/books/library/ebooks" ;;
+  books)        destDir="/data/books/library/_unprocessed" ;;
   *)            echo "[!] Unknown category \"$torrentCategory\" — skipping" >> "$(dirname "$0")/hardlink.log"; exit 0 ;;
 esac
 
@@ -466,9 +466,9 @@ This gives you both **automatic classification** for normal downloads and **manu
 ```text
 1. Shelfarr sends torrent to qBit
               ↓
-2. qBit downloads to /data/torrents/books/<category>
+2. qBit downloads to /data/books/torrents/<category>
               ↓
-3. hardlink script creates /data/media/books/<category> (same inode)
+3. hardlink script creates /data/books/library/<category> (same inode)
               ↓
 4. qBit seeds; ratio limit = 1.00
               ↓
@@ -548,7 +548,7 @@ services:
 
 1. **Categories exist** — `curl .../torrents/categories` returns all 7 + `books`.
 2. **AutoTMM enabled** — changing a torrent's category moves its files.
-3. **Hardlink works** — `stat -c '%i' /data/torrents/books/manga/X.cbz /data/media/books/manga/X.cbz` shows the **same inode**.
+3. **Hardlink works** — `stat -c '%i' /data/books/torrents/manga/X.cbz /data/books/library/manga/X.cbz` shows the **same inode**.
 4. **Same filesystem** — `df /data/torrents /data/media` shows the same device.
 5. **Classifier conservative** — a low-confidence torrent stays in `books` with tag `review`.
 6. **Ratio enforced** — qBittorrent pauses at 1.00; CleanUpArr only removes ratio-satisfied torrents.
@@ -561,8 +561,8 @@ services:
 | Step | Tool | Action |
 |---|---|---|
 | 1. Categorize | Classifier daemon | Watches `books`, sets category via regex + metadata |
-| 2. Route | qBittorrent + AutoTMM | Moves torrent to `/data/torrents/books/<category>` |
-| 3. Hardlink | `hardlink.sh` | `cp -rl` into `/data/media/books/<category>` |
+| 2. Route | qBittorrent + AutoTMM | Moves torrent to `/data/books/torrents/<category>` |
+| 3. Hardlink | `hardlink.sh` | `cp -rl` into `/data/books/library/<category>` |
 | 4. Seed | qBittorrent | Ratio limit 1.00 |
 | 5. Cleanup | CleanUpArr | Removes ratio-satisfied torrents; library survives |
 

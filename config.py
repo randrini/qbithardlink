@@ -25,7 +25,7 @@ DEFAULTS = {
         "password": "",  # must be set via QB_PASS env or config.local.yaml
         "source_category": "books",
     },
-    "library": {"root": "/data/media/books"},
+    "library": {"root": "/data/books/library"},
     "hardlink": {"script": "/app/hardlink.sh", "enabled": True},
     "log": {"file": "/app/logs/classifier.log", "level": "INFO"},
     "poll_interval": 10,

@@ -26,31 +26,33 @@ QB_PASS = cfg.get("qb.password", "your-password")
 
 #: Book/comics categories → save path (relative to the /data mount qBittorrent sees)
 #: These are hardlinked into the media library by hardlink.sh.
+#: Layout: one shared bind mount /data/books; torrents live under
+#: /data/books/torrents/<category> and the library under /data/books/library.
 BOOK_CATEGORIES = {
-    "manga": "/data/torrents/books/manga",
-    "manhwa": "/data/torrents/books/manhwa",
-    "webtoon": "/data/torrents/books/webtoon",
-    "comics": "/data/torrents/books/comics",
-    "bd": "/data/torrents/books/bd",
-    "light-novel": "/data/torrents/books/light-novel",
-    "ebooks": "/data/torrents/books/ebooks",
-    "books": "/data/torrents/books",  # fallback / needs-review
+    "manga": "/data/books/torrents/manga",
+    "manhwa": "/data/books/torrents/manhwa",
+    "webtoon": "/data/books/torrents/webtoon",
+    "comics": "/data/books/torrents/comics",
+    "bd": "/data/books/torrents/bd",
+    "light-novel": "/data/books/torrents/light-novel",
+    "ebooks": "/data/books/torrents/ebooks",
+    "books": "/data/books/torrents",  # fallback / needs-review
 }
 
 #: Exclusion categories → save path. These are created in qBittorrent so they
 #: exist, but are NEVER hardlinked or classified (video content managed by the
-#: *Arr apps, or non-book media).
+#: *Arr apps, or non-book media). Keep them outside the /data/books share.
 EXCLUDED_CATEGORIES = {
     # Video / media
-    "movies": "/data/torrents/movies",
-    "moviesanime": "/data/torrents/movies/anime",
-    "tv": "/data/torrents/tv",
-    "tvanime": "/data/torrents/tv/anime",
+    "movies": "/data/books/torrents/movies",
+    "moviesanime": "/data/books/torrents/movies/anime",
+    "tv": "/data/books/torrents/tv",
+    "tvanime": "/data/books/torrents/tv/anime",
     # *Arr-managed
-    "radarr": "/data/torrents/movies",
-    "radarranime": "/data/torrents/movies/anime",
-    "sonarr": "/data/torrents/tv",
-    "sonarranime": "/data/torrents/tv/anime",
+    "radarr": "/data/books/torrents/movies",
+    "radarranime": "/data/books/torrents/movies/anime",
+    "sonarr": "/data/books/torrents/tv",
+    "sonarranime": "/data/books/torrents/tv/anime",
 }
 
 #: All categories the bootstrap creates.

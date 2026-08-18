@@ -32,7 +32,7 @@ fi
 
 # Category → library destination (source of truth).
 # LIBRARY_ROOT is the canonical env var; MEDIA_ROOT is accepted as legacy fallback.
-MEDIA_ROOT="${LIBRARY_ROOT:-${MEDIA_ROOT:-/data/media/books}}"
+MEDIA_ROOT="${LIBRARY_ROOT:-${MEDIA_ROOT:-/data/books/library}}"
 case "$torrentCategory" in
   manga)        destDir="$MEDIA_ROOT/manga" ;;
   manhwa)       destDir="$MEDIA_ROOT/manhwa" ;;
