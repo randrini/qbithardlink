@@ -323,12 +323,19 @@ def process_once(qb, use_metadata=False, state=None):
 
         # Hardlink the completed content into the library (if enabled).
         if hardlink_enabled:
-            # Prefer the save_path root (works for both single-file and
-            # multi-file torrents). content_path may be a single file inside a
-            # folder torrent and would miss the rest.
-            content_path = t.get("save_path") or t.get("content_path") or (
-                os.path.join(t.get("save_path", ""), t.get("name", "")) if t.get("save_path") and t.get("name") else None
-            )
+            # Pick a source path that actually exists. qBittorrent's content_path
+            # is usually the exact file/folder, while save_path is the parent.
+            # For multi-file torrents, content_path is the folder root.
+            candidates = [
+                t.get("content_path"),
+                t.get("save_path"),
+                os.path.join(t.get("save_path", ""), t.get("name", "")) if t.get("save_path") and t.get("name") else None,
+            ]
+            content_path = None
+            for c in candidates:
+                if c and os.path.exists(c):
+                    content_path = c
+                    break
             if content_path:
                 torrent_name = t.get("name", "")
                 try:
@@ -351,7 +358,10 @@ def process_once(qb, use_metadata=False, state=None):
                 except Exception as e:
                     log.warning("hardlink error for %s: %s", torrent_name, e)
             else:
-                log.warning("hardlink enabled but no content_path/save_path for %s", t.get("name"))
+                log.warning(
+                    "hardlink enabled but no existing source path for %s (tried %s)",
+                    t.get("name"), [c for c in candidates if c],
+                )
 
     return state
 
