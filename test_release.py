@@ -40,6 +40,22 @@ def main():
     print(f"Result:  {cat} (conf={conf:.2f})")
     print(f"Reasons: {reasons}")
 
+    # Try to show the raw LLM JSON verdict if the LLM was used.
+    if os.environ.get("LLM_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            from metadata import llm_classify
+            from classifier import clean_release_name, extract_signals
+            signals = extract_signals(name, files=files)
+            llm_cat, llm_conf, llm_reasons = llm_classify(
+                clean_release_name(name, signals),
+                files=files,
+                signals=signals,
+                preliminary={"category": cat, "confidence": conf, "reasons": reasons},
+            )
+            print(f"LLM:     {llm_cat} (conf={llm_conf:.2f}) {llm_reasons}")
+        except Exception as e:
+            print(f"LLM raw: error={e}")
+
 
 if __name__ == "__main__":
     main()
