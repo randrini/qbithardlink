@@ -155,6 +155,7 @@ _US_COMIC_ORIGIN_TOKENS = {
     "panini", "panini comics", "100% marvel", "delcourt marvel",
     "urban comics", "dc deluxe", "dc collectibles",
     "swamp thing", "hellblazer", "constantine",
+    "bloodborne",
 }
 _COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo", "panini", "urban comics"}
 _BD_TOKENS = {
