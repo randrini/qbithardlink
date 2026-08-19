@@ -11,13 +11,16 @@ Provider selection is based on the MetaKavita community-scraper catalog
 each provider's payload quality. We use the free/no-key, API-based providers
 first (most reliable), then HTML providers where they are the best fit.
 
-Each provider returns a normalized dict:
+        Each provider returns a normalized dict:
     {
         "title": str,
         "format": "manga"|"webtoon"|"comic"|"book"|"light_novel",
         "publisher": str|None,
+        "authors": [str]|None, # writers/creators where available
+        "artist": str|None,    # illustrator/cover artist where available
         "language": str|None,   # ISO-639-1
         "country": str|None,   # ISO-3166-1
+        "year": str|int|None,
         "genres": [str],
         "isbn": str|None,
         "confidence": float,   # 0..1 provider match confidence
@@ -286,6 +289,7 @@ class Provider:
     def _candidate(self, **kw):
         base = {
             "title": None, "format": None, "publisher": None,
+            "authors": None, "artist": None,
             "language": None, "country": None, "year": None, "genres": [],
             "isbn": None, "confidence": 0.0, "provider": self.id,
         }
@@ -326,8 +330,31 @@ class MangaDexProvider(Provider):
             t = title_map.get("en") or title_map.get("ja-ro") or next(iter(title_map.values()), None)
             if not t or not _title_similar(t, title):
                 return None
+            authors = []
+            artists = []
+            for rel in best.get("relationships", []):
+                if not isinstance(rel, dict):
+                    continue
+                rid = rel.get("id")
+                rtype = (rel.get("type") or "").lower()
+                # resolve from included list
+                included = {item.get("id"): item for item in data.get("included", []) if isinstance(item, dict)}
+                info = included.get(rid, {})
+                name = None
+                if isinstance(info, dict):
+                    attr = info.get("attributes", {})
+                    name = attr.get("name") if isinstance(attr, dict) else None
+                if rtype == "author":
+                    if name:
+                        authors.append(name)
+                elif rtype == "artist":
+                    if name:
+                        artists.append(name)
             return self._candidate(
                 title=t, format=fmt, language=orig_lang,
+                authors=authors or None,
+                artist=artists[0] if artists else None,
+                year=str(attrs.get("year")) if attrs.get("year") else None,
                 genres=[g.get("attributes", {}).get("name", {}).get("en", "")
                         for g in attrs.get("tags", []) if g.get("attributes", {}).get("name", {}).get("en")],
                 confidence=0.9,
@@ -362,6 +389,8 @@ class KitsuProvider(Provider):
                 return None
             return self._candidate(
                 title=t, format=fmt,
+                authors=[a.get("attributes", {}).get("name") for a in data.get("included", [])
+                         if isinstance(a, dict) and a.get("type") == "authors" and a.get("attributes", {}).get("name")],
                 genres=[c.get("attributes", {}).get("title") for c in data.get("included", []) if c.get("type") == "categories"],
                 confidence=0.9,
             )
@@ -398,6 +427,7 @@ class ShikimoriProvider(Provider):
                 return None
             return self._candidate(
                 title=t, format=fmt,
+                authors=[str(a) for a in best.get("authors") or [] if a] or None,
                 genres=[g.get("name") for g in best.get("genres", []) if isinstance(g, dict)],
                 confidence=0.9,
             )
@@ -494,8 +524,26 @@ class MangaBakaProvider(Provider):
                 elif isinstance(g, str) and g.strip():
                     genres_list.append(g.strip())
 
+            # Authors/artists from staff list if available.
+            authors = []
+            artists = []
+            for person in best.get("staff") or []:
+                if not isinstance(person, dict):
+                    continue
+                p_name = person.get("name") if isinstance(person.get("name"), str) else None
+                roles = " ".join(str(r) for r in (person.get("roles") or [])).lower()
+                if not p_name:
+                    continue
+                if "art" in roles or "illustration" in roles or "artist" in roles:
+                    artists.append(p_name)
+                elif "story" in roles or "author" in roles:
+                    authors.append(p_name)
+
             return self._candidate(
                 title=best_t, format=fmt, publisher=publisher,
+                authors=authors or None,
+                artist=artists[0] if artists else None,
+                year=str(best.get("year")) if best.get("year") else None,
                 genres=genres_list, confidence=best_score,
             )
         except Exception as e:
@@ -623,10 +671,18 @@ class OpenLibraryProvider(Provider):
             isbn = None
             if best.get("isbn"):
                 isbn = str(best["isbn"][0]).replace("-", "").replace(" ", "")
+            authors = None
+            if best.get("author_name"):
+                authors = [str(a) for a in best["author_name"][:3] if a]
+            year = None
+            if best.get("first_publish_year"):
+                year = int(best["first_publish_year"])
             return self._candidate(
                 title=t, format="book",
                 publisher=best.get("publisher", [None])[0] if best.get("publisher") else None,
+                authors=authors,
                 language=best.get("language", [None])[0] if best.get("language") else None,
+                year=year,
                 genres=best.get("subject", [])[:5],
                 isbn=isbn, confidence=0.9,
             )
@@ -683,10 +739,19 @@ class GoogleBooksProvider(Provider):
                     break
             categories = best.get("categories", [])
             fmt = self._format_from_categories(categories)
+            authors = [str(a) for a in best.get("authors") or [] if a] or None
+            year = None
+            pub_date = best.get("publishedDate") or ""
+            if isinstance(pub_date, str):
+                m = re.search(r"\b(19|20)\d{2}\b", pub_date)
+                if m:
+                    year = int(m.group(0))
             return self._candidate(
                 title=t, format=fmt,
                 publisher=best.get("publisher"),
+                authors=authors,
                 language=best.get("language"),
+                year=year,
                 genres=categories,
                 isbn=isbn, confidence=0.9,
             )
@@ -772,6 +837,28 @@ class PlaneteBDProvider(Provider):
             else:
                 fmt = "comic"
 
+            # artist/author from typical Planète BD labels (strip "chez...")
+            def _extract_persons(text, label_re):
+                out = []
+                for m in re.finditer(label_re, text):
+                    chunk = m.group(1)
+                    # Split on " chez " / " de " / commas and take first clean token group
+                    for sep in (" chez ", " chez", " de ", " par ", ","):
+                        if sep in chunk:
+                            chunk = chunk.split(sep)[0]
+                            break
+                    chunk = chunk.strip(" :")
+                    for person in re.split(r"[,;/&]|\bet\b|\bavec\b", chunk):
+                        person = person.strip()
+                        if person and len(person) > 2:
+                            out.append(person)
+                return out
+
+            authors = _extract_persons(detail_html, r"(?:scénario|scenario)\s*:\s*([^<\n]+)")
+            artists = _extract_persons(detail_html, r"(?:dessin|dessins)\s*:\s*([^<\n]+)")
+            if not artists:
+                artists = _extract_persons(detail_html, r"(?:illustration|illustrateur)\s*:\s*([^<\n]+)")
+
             # publisher from "bd chez <publisher> de ..."
             publisher = None
             m = re.search(r"bd chez\s+([^<]+)", detail_html)
@@ -792,6 +879,8 @@ class PlaneteBDProvider(Provider):
 
             return self._candidate(
                 title=fetched_title, format=fmt, publisher=publisher,
+                authors=authors or None,
+                artist=artists[0] if artists else None,
                 country="FR", year=year, isbn=isbn, confidence=0.9,
             )
         except Exception as e:
@@ -856,6 +945,20 @@ class BedethequeProvider(Provider):
             h1 = dsoup.find("h1")
             fetched_title = h1.get_text(" ", strip=True) if h1 else title
 
+            # author/artist from common Bédéthèque detail labels.
+            authors = []
+            artists = []
+            for m in re.finditer(r"scénario\s*:\s*([^<\n]+)", detail_html):
+                for person in re.split(r"[,;/&]|\bet\b|\bavec\b", m.group(1)):
+                    person = person.strip(" :")
+                    if person and len(person) > 2:
+                        authors.append(person)
+            for m in re.finditer(r"dessin\s*:\s*([^<\n]+)", detail_html):
+                for person in re.split(r"[,;/&]|\bet\b|\bavec\b", m.group(1)):
+                    person = person.strip(" :")
+                    if person and len(person) > 2:
+                        artists.append(person)
+
             publisher = None
             m = re.search(r"éditeur\s*[:\s]+([^<]+)", detail_html)
             if m:
@@ -873,6 +976,8 @@ class BedethequeProvider(Provider):
 
             return self._candidate(
                 title=fetched_title, format="comic", publisher=publisher,
+                authors=authors or None,
+                artist=artists[0] if artists else None,
                 country="FR", year=year, isbn=isbn, confidence=0.9,
             )
         except Exception as e:
@@ -994,6 +1099,26 @@ class BDthequeProvider(Provider):
             h1 = dsoup.find("h1")
             fetched_title = h1.get_text(" ", strip=True) if h1 else (best.get("nom") or title)
 
+            # BDTheque has "Auteur(s)" / "Dessinateur(s)" rows in the same info table.
+            authors = []
+            artists = []
+            for tr in dsoup.select("table.table-sm tr"):
+                cells = tr.find_all("td")
+                if len(cells) < 2:
+                    continue
+                label = cells[0].get_text(" ", strip=True).lower()
+                text = cells[1].get_text(" ", strip=True)
+                if "auteur" in label or "scénario" in label or "scenario" in label:
+                    for person in re.split(r"[,;/&]|\bet\b|\bavec\b", text):
+                        person = person.strip(" :")
+                        if person and len(person) > 2:
+                            authors.append(person)
+                elif "dessin" in label or "illustration" in label:
+                    for person in re.split(r"[,;/&]|\bet\b|\bavec\b", text):
+                        person = person.strip(" :")
+                        if person and len(person) > 2:
+                            artists.append(person)
+
             publisher = None
             for tr in dsoup.select("table.table-sm tr"):
                 cells = tr.find_all("td")
@@ -1012,6 +1137,8 @@ class BDthequeProvider(Provider):
 
             return self._candidate(
                 title=fetched_title, format="bd", publisher=publisher,
+                authors=authors or None,
+                artist=artists[0] if artists else None,
                 country="FR", year=year, confidence=0.9,
             )
         except Exception as e:
@@ -1108,8 +1235,25 @@ class RanobeDBProvider(Provider):
                         publisher = pub["name"].strip()
                         break
 
+            # Authors/artists from people list.
+            authors = []
+            artists = []
+            for person in best.get("people") or []:
+                if not isinstance(person, dict):
+                    continue
+                p_name = person.get("name")
+                if not isinstance(p_name, str):
+                    continue
+                roles = " ".join(str(r) for r in (person.get("roles") or [])).lower()
+                if "art" in roles or "illustration" in roles or "illustrator" in roles:
+                    artists.append(p_name)
+                else:
+                    authors.append(p_name)
+
             return self._candidate(
                 title=fetched_title, format="light_novel", publisher=publisher,
+                authors=authors or None,
+                artist=artists[0] if artists else None,
                 language=best.get("lang"), year=year, genres=genres,
                 confidence=best_score,
             )
@@ -1412,8 +1556,10 @@ def _query_providers(providers, title, per_call_timeout, deadline):
 def _resolve_votes(votes, best_by_cat, providers):
     """Apply the voting/consensus logic to a set of provider votes.
 
-    Returns (category, confidence, provider_ids, title) or
-    (None, 0.0, None, reason) when unresolved.
+    Returns (category, confidence, provider_ids, candidate_dict) where
+    candidate_dict contains the winning candidate metadata (title, publisher,
+    authors, artist, year, country, etc.). On unresolved returns
+    (None, 0.0, None, reason) where reason is a string.
     """
     if not votes:
         return None, 0.0, None, "no provider match"
@@ -1465,13 +1611,13 @@ def _resolve_votes(votes, best_by_cat, providers):
         cand = best_by_cat[best_cat]
         voters = votes[best_cat]
         conf = min(cand.get("confidence", 0.7) + 0.05 * (len(voters) - 1), 1.0)
-        return best_cat, conf, "+".join(voters), cand.get("title")
+        return best_cat, conf, "+".join(voters), cand
     # Disagreement with no 2-provider agreement -> unresolved, tag for review
     return None, 0.0, None, f"providers disagree: {dict(votes)}"
 
 
 def lookup_category(title, google_books_key=None, comicvine_key=None, signals=None):
-    """Query providers for a release title, return (category, confidence, provider, reason).
+    """Query providers for a release title, return (category, confidence, provider, candidate_or_reason).
 
     Two-phase, signal-driven routing:
 
@@ -1486,7 +1632,8 @@ def lookup_category(title, google_books_key=None, comicvine_key=None, signals=No
     Each provider call is wrapped with a thread-level timeout so a single slow
     provider cannot block the whole cascade.
 
-    Returns (None, 0.0, None, reason) if no provider resolves it.
+    Returns (None, 0.0, None, reason) if no provider resolves it, otherwise
+    returns (category, confidence, provider_string, candidate_dict).
     """
     if not _META_ENABLED:
         return None, 0.0, None, "metadata disabled in config"
@@ -1513,12 +1660,12 @@ def lookup_category(title, google_books_key=None, comicvine_key=None, signals=No
                 )
                 if strong_cand.get("confidence", 0.0) >= 0.9:
                     conf = min(strong_cand.get("confidence", 0.9), 1.0)
-                    return strong_cat, conf, strong_cand.get("provider"), strong_cand.get("title")
+                    return strong_cat, conf, strong_cand.get("provider"), strong_cand
 
             # Otherwise use the normal consensus logic on the targeted votes.
-            cat, conf, prov, title = _resolve_votes(votes, best_by_cat, targeted)
+            cat, conf, prov, cand = _resolve_votes(votes, best_by_cat, targeted)
             if cat:
-                return cat, conf, prov, title
+                return cat, conf, prov, cand
 
     # ── Phase 2: fallback to ALL providers (existing voting logic) ─────────
     providers = _build_providers(google_books_key, comicvine_key)
@@ -1924,5 +2071,6 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
 if __name__ == "__main__":
     import sys
     for t in sys.argv[1:]:
-        cat, conf, prov, title = lookup_category(t)
+        cat, conf, prov, cand = lookup_category(t)
+        title = cand.get("title") if isinstance(cand, dict) else cand
         print(f"{t!r} → {cat} (conf={conf:.2f}, provider={prov}, title={title!r})")

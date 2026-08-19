@@ -19,7 +19,7 @@ import time
 from typing import Dict, Set
 
 import config as cfg
-from classifier import QBClient, classify, _best_torrent_name
+from classifier import QBClient, classify_with_metadata, _best_torrent_name
 
 BOOK_CATEGORIES: Set[str] = {
     "books", "manga", "manhwa", "manhua", "webtoon", "comics", "bd",
@@ -86,7 +86,7 @@ def main() -> None:
         files = qb.get_torrent_files(h)
         classify_name = _best_torrent_name(name, files)
         print(f"[{idx}/{len(to_reprocess)}] {name[:70]:70s} ...", flush=True)
-        cat, conf, reasons = classify(classify_name, t.get("tags", ""), files=files, use_metadata=use_metadata)
+        cat, conf, reasons, metadata = classify_with_metadata(classify_name, t.get("tags", ""), files=files, use_metadata=use_metadata)
         if cat == "skip":
             print("    → skip (video/non-book)", flush=True)
             continue
@@ -94,9 +94,32 @@ def main() -> None:
         old_cat = t.get("category", "")
         if cat == old_cat:
             print(f"    → {cat} (unchanged)", flush=True)
-            continue
+        else:
+            print(f"    → {cat} (was {old_cat}, conf={conf:.2f})", flush=True)
 
-        print(f"    → {cat} (was {old_cat}, conf={conf:.2f}) {reasons}", flush=True)
+        # Show who/why when useful metadata is available.
+        if metadata:
+            parts = []
+            if metadata.get("authors"):
+                authors = ", ".join(str(a) for a in metadata["authors"][:3])
+                parts.append(f"{authors} (author)")
+            if metadata.get("artist"):
+                parts.append(f"{metadata['artist']} (artist)")
+            if metadata.get("publisher"):
+                parts.append(f"{metadata['publisher']} (publisher)")
+            if metadata.get("year"):
+                parts.append(f"{metadata['year']} (year)")
+            if metadata.get("country"):
+                parts.append(f"{metadata['country']} (country)")
+            if parts:
+                print(f"      by: {', '.join(parts)}", flush=True)
+            why = "; ".join(str(r) for r in reasons)
+            # Skip the why line if it's just a single obvious signal already implied.
+            if why and not (len(reasons) == 1 and any(tok in str(reasons[0]).lower() for tok in ("bd signal", "manga signal", "comics"))):
+                print(f"      why: {why}", flush=True)
+
+        if cat == old_cat:
+            continue
 
         # Re-hardlink BEFORE changing category, same as daemon.
         content_path = _content_path(t, cat)

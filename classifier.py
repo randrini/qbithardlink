@@ -50,6 +50,11 @@ except Exception:
     llm_classify = None
     HAS_METADATA = False
 
+
+class ClassificationContext:
+    """Simple mutable container for the last metadata candidate seen."""
+    last_metadata_candidate: Dict[str, Any] | None = None
+
 # ── Configuration (from config.yaml, env-overridable) ────────────────────
 QB_URL = cfg.get("qb.url", "http://192.168.1.116:8084")
 QB_USER = cfg.get("qb.user", "bidalos")
@@ -483,10 +488,15 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
     # Metadata lookup
     if use_metadata and HAS_METADATA and lookup_category is not None:
         try:
-            cat, conf, prov, title = lookup_category(
+            cat, conf, prov, cand = lookup_category(
                 clean_release_name(name, signals), signals=signals
             )
             if cat:
+                if isinstance(cand, dict):
+                    ClassificationContext.last_metadata_candidate = cand
+                    title = cand.get("title")
+                else:
+                    title = cand
                 sig_str = ",".join(signals.get("matched") or [])
                 reasons.append(f"metadata:{prov} → {title!r} (signals: {sig_str})")
                 return cat, conf, reasons
@@ -536,7 +546,15 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
 
 
 def classify(name, tags=None, files=None, use_metadata=False):
-    """Return (category, confidence, reasons).
+    """Return (category, confidence, reasons)."""
+    cat, conf, reasons, _metadata = classify_with_metadata(
+        name, tags=tags, files=files, use_metadata=use_metadata
+    )
+    return cat, conf, reasons
+
+
+def classify_with_metadata(name, tags=None, files=None, use_metadata=False):
+    """Return (category, confidence, reasons, metadata_dict).
 
     Priority:
       0. Manual tag override (highest)
@@ -547,7 +565,11 @@ def classify(name, tags=None, files=None, use_metadata=False):
          overrides it if wrong. The LLM verdict has higher rank than the
          cascade, but it runs last so providers/regex can keep working when
          the LLM is unavailable.
+
+    The returned metadata_dict is the provider candidate dict when metadata
+    drove the classification, otherwise an empty dict.
     """
+    ClassificationContext.last_metadata_candidate = None
     tags = [t.strip().lower() for t in (tags or "").split(",") if t.strip()]
     signals = extract_signals(name, files=files)
 
@@ -555,6 +577,8 @@ def classify(name, tags=None, files=None, use_metadata=False):
     prelim_cat, prelim_conf, prelim_reasons = _preliminary_classify(
         name, tags, files, signals, use_metadata
     )
+
+    metadata = ClassificationContext.last_metadata_candidate or {}
 
     # ── LLM final arbiter ──────────────────────────────────────────────────
     llm_enabled = cfg.get("llm.enabled", False)
@@ -575,13 +599,13 @@ def classify(name, tags=None, files=None, use_metadata=False):
                 if llm_cat == prelim_cat:
                     # LLM confirms: keep the cascade category but boost confidence.
                     conf = max(prelim_conf, 0.90)
-                    return prelim_cat, conf, prelim_reasons + ["llm-confirmed"] + llm_reasons
+                    return prelim_cat, conf, prelim_reasons + ["llm-confirmed"] + llm_reasons, metadata
                 # LLM disagrees: authoritative override.
-                return llm_cat, 0.95, [f"llm-override:{prelim_cat}→{llm_cat}"] + llm_reasons
+                return llm_cat, 0.95, [f"llm-override:{prelim_cat}→{llm_cat}"] + llm_reasons, metadata
         except Exception as e:
             prelim_reasons.append(f"llm error: {e}")
 
-    return prelim_cat, prelim_conf, prelim_reasons
+    return prelim_cat, prelim_conf, prelim_reasons, metadata
 
 
 # ── qBittorrent API helpers ───────────────────────────────────────────────
