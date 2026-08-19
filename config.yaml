@@ -133,10 +133,23 @@ metadata:
 llm:
   enabled: false
   mode: "fallback"     # "fallback" = only when cascade is uncertain; "verify" = always check
+  # Legacy single-provider keys (still supported; used when providers list is empty).
   endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
   model: "gemini-flash-latest"
   api_key: ""          # your Gemini API key (or set LLM_API_KEY in .env)
   timeout: 30          # seconds per request
+  # Multi-provider fallback list (preferred). If non-empty it overrides the legacy keys above.
+  # The classifier tries each provider in order, falling back on 429/403/quota or transient failure.
+  # providers:
+  #   - endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+  #     model: "gemini-flash-latest"
+  #     api_key: "YOUR_GEMINI_KEY"
+  #     timeout: 30
+  #   - endpoint: "https://openrouter.ai/api/v1/chat/completions"
+  #     model: "google/gemini-2.5-flash-preview-05-20:free"
+  #     api_key: "sk-or-v1-..."
+  #     timeout: 30
+  providers: []
   delay_seconds: 5.0   # seconds between LLM calls to stay within free-tier RPM limits
   cooldown_minutes: 60 # how long to disable LLM after a quota/rate-limit error
 

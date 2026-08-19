@@ -46,6 +46,11 @@ services:
       # OpenAI-compatible endpoints, and Ollama. Set LLM_ENABLED=true to activate.
       - LLM_ENABLED=${LLM_ENABLED:-false}
       - LLM_MODE=${LLM_MODE:-fallback}
+      # Multi-provider list as a JSON array string. If set, it overrides the
+      # legacy single-provider env vars below. Example:
+      # LLM_PROVIDERS='[{"endpoint":"...","model":"...","api_key":"...","timeout":30},...]'
+      - LLM_PROVIDERS=${LLM_PROVIDERS:-}
+      # Legacy single-provider env vars (still supported; used when LLM_PROVIDERS is empty).
       - LLM_ENDPOINT=${LLM_ENDPOINT:-https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent}
       - LLM_MODEL=${LLM_MODEL:-gemini-flash-latest}
       - LLM_API_KEY=${LLM_API_KEY:-}

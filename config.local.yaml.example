@@ -82,8 +82,24 @@ llm:
   # providers and regex, and its verdict is trusted at high confidence. If the
   # LLM is unreachable, the cascade falls back to metadata → regex → extensions.
   mode: "primary"        # "primary" = LLM first when enabled; legacy "fallback"/"verify" also accepted
+
+  # -- Option A: legacy single-provider setup (still supported) --
   endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
   model: "gemini-flash-latest"
   api_key: ""           # or set LLM_API_KEY env var
   timeout: 30
+
+  # -- Option B: multi-provider fallback (recommended) --
+  # The classifier tries each provider in order and only gives up when all fail.
+  # Uncomment and fill in real keys to use; leave empty to keep the legacy keys above.
+  # providers:
+  #   - endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+  #     model: "gemini-flash-latest"
+  #     api_key: "YOUR_GEMINI_KEY"
+  #     timeout: 30
+  #   - endpoint: "https://openrouter.ai/api/v1/chat/completions"
+  #     model: "google/gemini-2.5-flash-preview-05-20:free"
+  #     api_key: "sk-or-v1-..."
+  #     timeout: 30
+
   cooldown_minutes: 60  # disable LLM for this long after a quota/rate-limit error

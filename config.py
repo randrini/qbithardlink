@@ -4,6 +4,8 @@
 Loads config.yaml (or CONFIG_PATH env override) and exposes typed accessors.
 Secrets can be overridden via env vars (QB_PASS, GOOGLE_BOOKS_API_KEY, ...).
 """
+import json
+import logging
 import os
 import re
 
@@ -12,6 +14,8 @@ try:
     HAS_YAML = True
 except Exception:
     HAS_YAML = False
+
+log = logging.getLogger("config")
 
 _CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.environ.get("CONFIG_PATH", os.path.join(_CONFIG_DIR, "config.yaml"))
@@ -44,10 +48,13 @@ DEFAULTS = {
     "llm": {
         "enabled": False,
         "mode": "fallback",  # "fallback" = only when cascade is uncertain; "verify" = always check
+        # Legacy single-provider keys (still supported)
         "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
         "model": "gemini-flash-latest",
         "api_key": "",
         "timeout": 30,
+        # New multi-provider list. If non-empty it overrides the legacy keys above.
+        "providers": [],
         "delay_seconds": 5.0,
     },
     "tag_overrides": {
@@ -76,11 +83,11 @@ def _load_yaml(path):
         return {}
     try:
         with open(path) as f:
-            return yaml.safe_load(f) or {}  # noqa: F821 (guarded by HAS_YAML)
+            return yaml.safe_load(f) or {}
     except FileNotFoundError:
         return {}
     except Exception as e:
-        print(f"warning: could not load {path}: {e}")
+        log.warning("could not load %s: %s", path, e)
         return {}
 
 
@@ -135,6 +142,13 @@ def _env_override(cfg):
         cfg["llm"]["timeout"] = int(os.environ["LLM_TIMEOUT"])
     if os.environ.get("LLM_COOLDOWN_MINUTES"):
         cfg["llm"]["cooldown_minutes"] = float(os.environ["LLM_COOLDOWN_MINUTES"])
+    if os.environ.get("LLM_PROVIDERS"):
+        try:
+            parsed = json.loads(os.environ["LLM_PROVIDERS"])
+            if isinstance(parsed, list):
+                cfg["llm"]["providers"] = parsed
+        except Exception:
+            log.warning("could not parse LLM_PROVIDERS as JSON list; ignoring env override")
     return cfg
 
 

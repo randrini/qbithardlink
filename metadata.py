@@ -1702,21 +1702,130 @@ _LLM_FORMAT_TO_CATEGORY = {
 #: LLM settings (config.yaml `llm:` section, env-overridable).
 try:
     _LLM_ENABLED = bool(_cfg.get("llm.enabled", False))
-    _LLM_ENDPOINT = str(_cfg.get("llm.endpoint", "") or "").strip()
-    _LLM_MODEL = str(_cfg.get("llm.model", "") or "").strip()
-    _LLM_API_KEY = str(_cfg.get("llm.api_key", "") or "").strip()
-    _LLM_TIMEOUT = float(_cfg.get("llm.timeout", 30) or 30)
     _LLM_COOLDOWN_MINUTES = float(_cfg.get("llm.cooldown_minutes", 60) or 60)
 except Exception:
     _LLM_ENABLED = False
-    _LLM_ENDPOINT = ""
-    _LLM_MODEL = ""
-    _LLM_API_KEY = ""
-    _LLM_TIMEOUT = 30.0
     _LLM_COOLDOWN_MINUTES = 60.0
+
+#: Legacy single-provider config (kept for backward compatibility).
+try:
+    _LEGACY_LLM_ENDPOINT = str(_cfg.get("llm.endpoint", "") or "").strip()
+    _LEGACY_LLM_MODEL = str(_cfg.get("llm.model", "") or "").strip()
+    _LEGACY_LLM_API_KEY = str(_cfg.get("llm.api_key", "") or "").strip()
+    _LEGACY_LLM_TIMEOUT = float(_cfg.get("llm.timeout", 30) or 30)
+except Exception:
+    _LEGACY_LLM_ENDPOINT = ""
+    _LEGACY_LLM_MODEL = ""
+    _LEGACY_LLM_API_KEY = ""
+    _LEGACY_LLM_TIMEOUT = 30.0
 
 #: Unix timestamp until which the LLM is temporarily disabled after a quota/rate-limit error.
 _llm_cooldown_until = 0.0
+
+
+def _load_llm_providers():
+    """Return a list of provider dicts from config/env.
+
+    Preferred order:
+      1. LLM_PROVIDERS env var (JSON list)
+      2. llm.providers list from config
+      3. Legacy llm.endpoint/model/api_key/timeout from config
+
+    Each provider dict has: endpoint, model, api_key, timeout, id.
+    Provider IDs are generated as "provider-host-N" (e.g. "gemini-1", "openrouter-2").
+    """
+    import json
+
+    env_providers = os.environ.get("LLM_PROVIDERS", "").strip()
+    if env_providers:
+        try:
+            parsed = json.loads(env_providers)
+            if isinstance(parsed, list) and parsed:
+                providers = []
+                for p in parsed:
+                    if not isinstance(p, dict):
+                        continue
+                    providers.append({
+                        "endpoint": str(p.get("endpoint") or "").strip(),
+                        "model": str(p.get("model") or "").strip(),
+                        "api_key": str(p.get("api_key") or p.get("apiKey") or "").strip(),
+                        "timeout": float(p.get("timeout", 30) or 30),
+                    })
+                if providers:
+                    return _normalize_provider_ids(providers)
+        except Exception:
+            log.warning("Could not parse LLM_PROVIDERS env var as JSON list")
+
+    cfg_providers = _cfg.get("llm.providers", []) or []
+    if isinstance(cfg_providers, list) and cfg_providers:
+        providers = []
+        for p in cfg_providers:
+            if not isinstance(p, dict):
+                continue
+            providers.append({
+                "endpoint": str(p.get("endpoint") or "").strip(),
+                "model": str(p.get("model") or "").strip(),
+                "api_key": str(p.get("api_key") or p.get("apiKey") or "").strip(),
+                "timeout": float(p.get("timeout", 30) or 30),
+            })
+        if providers:
+            # Env overrides for the first provider only.
+            if os.environ.get("LLM_ENDPOINT"):
+                providers[0]["endpoint"] = os.environ["LLM_ENDPOINT"].strip()
+            if os.environ.get("LLM_MODEL"):
+                providers[0]["model"] = os.environ["LLM_MODEL"].strip()
+            if os.environ.get("LLM_API_KEY"):
+                providers[0]["api_key"] = os.environ["LLM_API_KEY"].strip()
+            if os.environ.get("LLM_TIMEOUT"):
+                try:
+                    providers[0]["timeout"] = float(os.environ["LLM_TIMEOUT"])
+                except Exception:
+                    pass
+            return _normalize_provider_ids(providers)
+
+    # Legacy single-provider fallback.
+    endpoint = _LEGACY_LLM_ENDPOINT
+    model = _LEGACY_LLM_MODEL
+    api_key = _LEGACY_LLM_API_KEY
+    timeout = _LEGACY_LLM_TIMEOUT
+    if os.environ.get("LLM_ENDPOINT"):
+        endpoint = os.environ["LLM_ENDPOINT"].strip()
+    if os.environ.get("LLM_MODEL"):
+        model = os.environ["LLM_MODEL"].strip()
+    if os.environ.get("LLM_API_KEY"):
+        api_key = os.environ["LLM_API_KEY"].strip()
+    if os.environ.get("LLM_TIMEOUT"):
+        try:
+            timeout = float(os.environ["LLM_TIMEOUT"])
+        except Exception:
+            pass
+    if endpoint and model:
+        return _normalize_provider_ids([{
+            "endpoint": endpoint,
+            "model": model,
+            "api_key": api_key,
+            "timeout": timeout,
+        }])
+    return []
+
+
+def _normalize_provider_ids(providers):
+    """Assign short generated IDs to a list of provider dicts."""
+    out = []
+    for i, p in enumerate(providers, start=1):
+        endpoint = p.get("endpoint", "")
+        host = "provider"
+        if endpoint:
+            host = (urllib.parse.urlparse(endpoint).hostname or "provider").lower()
+            # Strip common API subdomains for readability.
+            host = host.replace("generativelanguage.googleapis.com", "gemini")
+            host = host.replace("openrouter.ai", "openrouter")
+            host = re.sub(r"[^a-z0-9]+", "-", host).strip("-")
+            host = host[:20]
+        p = dict(p)
+        p["id"] = f"{host}-{i}"
+        out.append(p)
+    return out
 
 
 def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
@@ -1743,7 +1852,11 @@ def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
 
 def _llm_enabled():
     """Whether the LLM final-arbiter is enabled (env/config) and not in cooldown."""
-    if not (_LLM_ENABLED and _LLM_ENDPOINT and _LLM_MODEL):
+    if not _LLM_ENABLED:
+        return False
+    providers = _load_llm_providers()
+    if not providers:
+        log.debug("LLM enabled but no providers configured; skipping")
         return False
     if time.time() < _llm_cooldown_until:
         remaining = int(_llm_cooldown_until - time.time())
@@ -1808,26 +1921,34 @@ def _redact_url_secret(url_or_msg: str, key: str) -> str:
     return text
 
 
-def _llm_request(payload, retries=2):
-    """POST a chat payload to the configured endpoint with transient-error retries.
+def _llm_request_for_provider(payload, provider, retries=2):
+    """POST a chat payload to a single provider and return the result.
 
-    Supports three backends:
-    - Gemini v1beta native: endpoint contains "generativelanguage.googleapis.com"
-    - OpenAI-compatible: endpoint ends with /v1/chat/completions
-    - Ollama native: everything else (assumes /api/chat format)
-    Returns the raw response text or None on failure.
+    Handles backend selection (Gemini, OpenAI-compatible, Ollama) and per-provider
+    transient retries. Returns a dict:
+        {
+            "ok": bool,
+            "text": raw response text (only if ok),
+            "status": HTTP status code or 0,
+            "error": exception / message string or None,
+            "continue": bool,  # True if caller should try the next provider
+        }
     """
-    global _llm_cooldown_until
-    if not HAS_REQUESTS:
-        log.warning("LLM classification requested but `requests` is unavailable")
-        return None
-    endpoint = _LLM_ENDPOINT
+    endpoint = provider.get("endpoint", "")
+    model = provider.get("model", "")
+    api_key = provider.get("api_key", "")
+    timeout = float(provider.get("timeout", 30) or 30)
+    provider_id = provider.get("id", "provider")
     headers = {"Content-Type": "application/json"}
-    api_key = _LLM_API_KEY
+
+    def _result(ok, text=None, status=0, error=None, continue_=True):
+        return {"ok": ok, "text": text, "status": status, "error": error, "continue": continue_}
+
+    def _is_ratelimit(status, err_text):
+        return status in (429, 403) or any(k in err_text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota"))
 
     # ── Gemini v1beta native API ─────────────────────────────────────────
     if "generativelanguage.googleapis.com" in endpoint:
-        # Build the Gemini request body.
         prompt_text = ""
         for msg in payload.get("messages", []):
             if msg.get("role") == "user":
@@ -1841,91 +1962,138 @@ def _llm_request(payload, retries=2):
                 "maxOutputTokens": 300,
             },
         }
-        # The endpoint must include the model path and :generateContent.
-        # Expected format:
-        #   https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent
-        # The API key is passed as a URL parameter.
         sep = "&" if "?" in endpoint else "?"
         url = f"{endpoint}{sep}key={api_key}" if api_key else endpoint
         last_err = None
+        last_status = 0
         for attempt in range(retries + 1):
             try:
-                resp = _requests.post(url, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+                resp = _requests.post(url, json=body, headers=headers, timeout=timeout)
                 resp.raise_for_status()
                 data = resp.json()
-                # Extract text from Gemini response: candidates[0].content.parts[0].text
                 candidates = data.get("candidates") or []
                 if candidates:
                     parts = (candidates[0].get("content") or {}).get("parts") or []
                     if parts and parts[0].get("text"):
-                        return parts[0]["text"]
-                log.warning("Gemini response had no candidates/content for prompt")
-                return None
+                        return _result(True, text=parts[0]["text"])
+                log.warning("%s response had no candidates/content for prompt", provider_id)
+                return _result(False, status=0, error="no candidates/content", continue_=True)
             except Exception as e:
                 last_err = e
-                status = getattr(getattr(e, "response", None), "status_code", 0)
-                text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
-                if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
-                    _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
-                    log.warning(
-                        "Gemini quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
-                        status, _LLM_COOLDOWN_MINUTES,
-                    )
-                    return None
-                if status in (502, 503, 504) and attempt < retries:
+                last_status = getattr(getattr(e, "response", None), "status_code", 0)
+                err_text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
+                if _is_ratelimit(last_status, err_text):
+                    log.debug("%s rate-limited/quota (HTTP %s); trying next provider", provider_id, last_status or "?")
+                    return _result(False, status=last_status, error=str(e), continue_=True)
+                if last_status in (502, 503, 504) and attempt < retries:
                     sleep_s = 1.5 * (2 ** attempt)
-                    log.debug("Gemini transient error HTTP %s; retrying in %.1fs", status, sleep_s)
+                    log.debug("%s transient error HTTP %s; retrying in %.1fs", provider_id, last_status, sleep_s)
                     time.sleep(sleep_s)
                     continue
                 break
         safe_endpoint = _redact_url_secret(endpoint, api_key)
-        log.warning("Gemini request to %s failed: %s", safe_endpoint, last_err)
-        return None
+        log.debug("%s request to %s failed: %s", provider_id, safe_endpoint, last_err)
+        return _result(False, status=last_status, error=str(last_err), continue_=True)
 
-    # ── OpenAI-compatible ─────────────────────────────────────────────────
+    # ── OpenAI-compatible / Ollama ───────────────────────────────────────
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
     if endpoint.rstrip("/").endswith("/v1/chat/completions"):
         body = {
-            "model": _LLM_MODEL,
+            "model": model,
             "messages": payload.get("messages"),
             "temperature": 0.0,
             "max_tokens": 300,
         }
     else:
-        # Ollama native /api/chat
         body = {
-            "model": _LLM_MODEL,
+            "model": model,
             "messages": payload.get("messages"),
             "stream": False,
             "options": {"temperature": 0.0, "num_predict": 300},
         }
     last_err = None
+    last_status = 0
     for attempt in range(retries + 1):
         try:
-            resp = _requests.post(endpoint, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+            resp = _requests.post(endpoint, json=body, headers=headers, timeout=timeout)
             resp.raise_for_status()
-            return resp.text
+            return _result(True, text=resp.text)
         except Exception as e:
             last_err = e
-            status = getattr(getattr(e, "response", None), "status_code", 0)
-            text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
-            if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
-                _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
-                log.warning(
-                    "LLM quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
-                    status, _LLM_COOLDOWN_MINUTES,
-                )
-                return None
-            if status in (502, 503, 504, 429) and attempt < retries:
+            last_status = getattr(getattr(e, "response", None), "status_code", 0)
+            err_text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
+            if _is_ratelimit(last_status, err_text):
+                log.debug("%s rate-limited/quota (HTTP %s); trying next provider", provider_id, last_status or "?")
+                return _result(False, status=last_status, error=str(e), continue_=True)
+            if last_status in (502, 503, 504, 429) and attempt < retries:
                 sleep_s = 1.5 * (2 ** attempt)
-                log.debug("LLM transient error HTTP %s; retrying in %.1fs", status, sleep_s)
+                log.debug("%s transient error HTTP %s; retrying in %.1fs", provider_id, last_status, sleep_s)
                 time.sleep(sleep_s)
                 continue
             break
     safe_endpoint = _redact_url_secret(endpoint, api_key)
-    log.warning("LLM request to %s failed: %s", safe_endpoint, last_err)
+    log.debug("%s request to %s failed: %s", provider_id, safe_endpoint, last_err)
+    return _result(False, status=last_status, error=str(last_err), continue_=True)
+
+
+def _is_llm_rate_limit_error(status, error):
+    """Return True if a final failure looks like a rate-limit / quota error."""
+    err_text = str(error or "").lower()
+    return (
+        status in (429, 403)
+        or any(k in err_text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota"))
+    )
+
+
+def _llm_request(payload, retries=2):
+    """POST a chat payload to each configured provider until one succeeds.
+
+    Iterates over providers from `_load_llm_providers()`. On rate-limit / quota
+    for a provider, logs at debug and tries the next. On transient failures, retries
+    within the provider up to `retries` times, then moves to the next provider.
+    If all providers fail due to rate-limit, sets a global cooldown. Otherwise
+    returns None and logs the last provider error.
+    """
+    global _llm_cooldown_until
+    if not HAS_REQUESTS:
+        log.warning("LLM classification requested but `requests` is unavailable")
+        return None
+
+    providers = _load_llm_providers()
+    if not providers:
+        log.debug("No LLM providers configured; skipping")
+        return None
+
+    all_rate_limited = True
+    last_error = None
+    last_status = 0
+    last_provider_id = None
+
+    for provider in providers:
+        result = _llm_request_for_provider(payload, provider, retries=retries)
+        if result["ok"]:
+            return result["text"]
+        last_status = result.get("status") or 0
+        last_error = result.get("error")
+        last_provider_id = provider.get("id", "provider")
+        if not _is_llm_rate_limit_error(last_status, last_error):
+            all_rate_limited = False
+        if result.get("continue"):
+            continue
+        # Provider signalled a non-continue failure (should not happen in current impl).
+        break
+
+    if all_rate_limited:
+        _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
+        log.warning(
+            "All LLM providers rate-limited/quota (last HTTP %s). Cooling down for %.0f minutes.",
+            last_status or "?", _LLM_COOLDOWN_MINUTES,
+        )
+    else:
+        safe_msg = _redact_url_secret(str(last_error or "unknown error"), "")
+        log.warning("LLM request failed for all providers (last %s): %s", last_provider_id or "provider", safe_msg)
     return None
 
 
