@@ -56,6 +56,7 @@ services:
       - ./hardlink.sh:/app/hardlink.sh:ro
       - ./bootstrap_categories.py:/app/bootstrap_categories.py:ro
       - ./move_torrents_to_books_share.py:/app/move_torrents_to_books_share.py:ro
+      - ./reprocess_all_books.py:/app/reprocess_all_books.py:ro
       - ./test_release.py:/app/test_release.py:ro
       - ./test_jikan.py:/app/test_jikan.py:ro
       - ./test_providers.py:/app/test_providers.py:ro

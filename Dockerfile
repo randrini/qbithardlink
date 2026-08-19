@@ -17,11 +17,12 @@ COPY hardlink.sh /app/hardlink.sh
 COPY corpus.txt /app/corpus.txt
 COPY bootstrap_categories.py /app/bootstrap_categories.py
 COPY move_torrents_to_books_share.py /app/move_torrents_to_books_share.py
+COPY reprocess_all_books.py /app/reprocess_all_books.py
 COPY test_release.py /app/test_release.py
 COPY test_jikan.py /app/test_jikan.py
 COPY test_providers.py /app/test_providers.py
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/hardlink.sh /app/entrypoint.sh /app/bootstrap_categories.py /app/move_torrents_to_books_share.py /app/test_release.py /app/test_jikan.py /app/test_providers.py && mkdir -p /app/logs
+RUN chmod +x /app/hardlink.sh /app/entrypoint.sh /app/bootstrap_categories.py /app/move_torrents_to_books_share.py /app/reprocess_all_books.py /app/test_release.py /app/test_jikan.py /app/test_providers.py && mkdir -p /app/logs
 
 # Create a non-root user matching host PUID/PGID (defaults 99:100, common on Unraid).
 # If the GID/UID already exist in the base image, reuse them instead of failing.
