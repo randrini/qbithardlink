@@ -619,6 +619,44 @@ def _with_state_lock[T](fn, *args, **kwargs) -> T:
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
+def _best_torrent_name(torrent_name, files):
+    """Return the most informative name to classify from.
+
+    qBittorrent sometimes shortens the display name (e.g. "Yuna" instead of
+    "Yuna.Lamontagne.Yi.[INTEGRALE].2010.FR.[CBR]-NOTAG"). When files are
+    available, prefer the longest file/folder name that contains more tokens.
+    """
+    if not files:
+        return torrent_name
+    candidates = [torrent_name]
+    for f in files:
+        path = f.get("name") if isinstance(f, dict) else str(f)
+        if path:
+            # Use the top-level entry only (strip subfolders).
+            top = path.split("/")[0].split("\\")[0]
+            candidates.append(top)
+    # Prefer the candidate with the most dots/underscores (more informative),
+    # but only if it is not absurdly longer than the display name.
+    def score(c):
+        c = c.strip()
+        if not c:
+            return -1
+        separators = c.count(".") + c.count("_") + c.count("-")
+        return separators * 10 + len(c)
+    best = max(candidates, key=score)
+    return best or torrent_name
+
+
+def _format_reasons(reasons):
+    """Compact single-line representation of classification reasons."""
+    if not reasons:
+        return ""
+    out = " | ".join(str(r) for r in reasons)
+    if len(out) > 300:
+        out = out[:297] + "..."
+    return out
+
+
 def process_once(qb, use_metadata=False, state=None):
     """Classify new `books` torrents once. Idempotent: skips torrents already
     tagged review/classified or recorded in the state file."""
@@ -644,8 +682,10 @@ def process_once(qb, use_metadata=False, state=None):
             continue
 
         files = qb.get_torrent_files(h)
+        display_name = t.get("name", "")
+        classify_name = _best_torrent_name(display_name, files)
         cat, conf, reasons = classify(
-            t.get("name", ""),
+            classify_name,
             t.get("tags", ""),
             files=files,
             use_metadata=use_metadata,
@@ -661,7 +701,13 @@ def process_once(qb, use_metadata=False, state=None):
             qb.add_tags(h, "classified")
         state.add(h)
         changed = True
-        log.info("[%s] → %s (conf=%.2f) %s", t.get("name"), cat, conf, reasons)
+        if classify_name != display_name:
+            log.info(
+                "[%s] (from files: %s) → %s (conf=%.2f) %s",
+                display_name, classify_name, cat, conf, _format_reasons(reasons)
+            )
+        else:
+            log.info("[%s] → %s (conf=%.2f) %s", display_name, cat, conf, _format_reasons(reasons))
         # Save state immediately after each successful classification so a
         # later crash does not cause re-processing / duplicate hardlinks.
         _save_state(state)
@@ -696,12 +742,15 @@ def process_once(qb, use_metadata=False, state=None):
                         text=True,
                     )
                     if result.returncode == 0:
-                        log.info("hardlink ok: %s → %s (rc=%d)", torrent_name, content_path, result.returncode)
+                        log.info(
+                            "hardlink ok: %s → %s (category=%s, rc=%d)",
+                            torrent_name, content_path, cat, result.returncode,
+                        )
                         hardlink_ok = True
                     else:
                         log.warning(
-                            "hardlink failed: %s (rc=%d) stderr=%s",
-                            torrent_name, result.returncode, (result.stderr or "").strip(),
+                            "hardlink failed: %s (category=%s, rc=%d) stderr=%s",
+                            torrent_name, cat, result.returncode, (result.stderr or "").strip(),
                         )
                 except subprocess.TimeoutExpired:
                     log.warning("hardlink timed out after 300s: %s", torrent_name)
