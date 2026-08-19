@@ -101,10 +101,7 @@ llm:
   #     model: "google/gemma-4-26b-a4b-it:free"
   #     api_key: "sk-or-v1-..."
   #     timeout: 30
-  #   - id: "groq"
-  #     endpoint: "https://api.groq.com/openai/v1/chat/completions"
-  #     model: "llama-3.1-8b-instant"
-  #     api_key: "gsk_..."
-  #     timeout: 30
+  # Note: Groq free models do not return clean JSON, so they are not recommended
+  # as an LLM fallback for this classifier.
 
   cooldown_minutes: 10  # disable LLM for this long after all providers are rate-limited (set lower for free-tier bulk runs)
