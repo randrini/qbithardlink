@@ -114,8 +114,7 @@ def main() -> None:
             if parts:
                 print(f"      by: {', '.join(parts)}", flush=True)
             why = "; ".join(str(r) for r in reasons)
-            # Skip the why line if it's just a single obvious signal already implied.
-            if why and not (len(reasons) == 1 and any(tok in str(reasons[0]).lower() for tok in ("bd signal", "manga signal", "comics"))):
+            if why:
                 print(f"      why: {why}", flush=True)
 
         if cat == old_cat:

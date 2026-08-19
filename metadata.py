@@ -1808,8 +1808,8 @@ def _redact_url_secret(url_or_msg: str, key: str) -> str:
     return text
 
 
-def _llm_request(payload):
-    """POST a chat payload to the configured endpoint.
+def _llm_request(payload, retries=2):
+    """POST a chat payload to the configured endpoint with transient-error retries.
 
     Supports three backends:
     - Gemini v1beta native: endpoint contains "generativelanguage.googleapis.com"
@@ -1846,22 +1846,32 @@ def _llm_request(payload):
         # The API key is passed as a URL parameter.
         sep = "&" if "?" in endpoint else "?"
         url = f"{endpoint}{sep}key={api_key}" if api_key else endpoint
-        try:
-            resp = _requests.post(url, json=body, headers=headers, timeout=_LLM_TIMEOUT)
-            resp.raise_for_status()
-            data = resp.json()
-            # Extract text from Gemini response: candidates[0].content.parts[0].text
-            candidates = data.get("candidates") or []
-            if candidates:
-                parts = (candidates[0].get("content") or {}).get("parts") or []
-                if parts and parts[0].get("text"):
-                    return parts[0]["text"]
-            log.warning("Gemini response had no candidates/content for prompt")
-            return None
-        except Exception as e:
-            safe_endpoint = _redact_url_secret(endpoint, api_key)
-            log.warning("Gemini request to %s failed: %s", safe_endpoint, e)
-            return None
+        last_err = None
+        for attempt in range(retries + 1):
+            try:
+                resp = _requests.post(url, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+                resp.raise_for_status()
+                data = resp.json()
+                # Extract text from Gemini response: candidates[0].content.parts[0].text
+                candidates = data.get("candidates") or []
+                if candidates:
+                    parts = (candidates[0].get("content") or {}).get("parts") or []
+                    if parts and parts[0].get("text"):
+                        return parts[0]["text"]
+                log.warning("Gemini response had no candidates/content for prompt")
+                return None
+            except Exception as e:
+                last_err = e
+                status = getattr(getattr(e, "response", None), "status_code", 0)
+                if status in (502, 503, 504) and attempt < retries:
+                    sleep_s = 1.5 * (2 ** attempt)
+                    log.debug("Gemini transient error HTTP %s; retrying in %.1fs", status, sleep_s)
+                    time.sleep(sleep_s)
+                    continue
+                break
+        safe_endpoint = _redact_url_secret(endpoint, api_key)
+        log.warning("Gemini request to %s failed: %s", safe_endpoint, last_err)
+        return None
 
     # ── OpenAI-compatible ─────────────────────────────────────────────────
     if api_key:
@@ -1882,26 +1892,33 @@ def _llm_request(payload):
             "stream": False,
             "options": {"temperature": 0.0, "num_predict": 300},
         }
-    try:
-        resp = _requests.post(endpoint, json=body, headers=headers, timeout=_LLM_TIMEOUT)
-        resp.raise_for_status()
-        return resp.text
-    except Exception as e:
-        # Detect quota / rate-limit errors and enter cooldown so a single
-        # exhausted API key does not block all classifications.
-        status = getattr(getattr(e, "response", None), "status_code", 0)
-        text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
-        if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
-            global _llm_cooldown_until
-            _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
-            log.warning(
-                "LLM quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
-                status, _LLM_COOLDOWN_MINUTES,
-            )
-        else:
-            safe_endpoint = _redact_url_secret(endpoint, api_key)
-            log.warning("LLM request to %s failed: %s", safe_endpoint, e)
-        return None
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            resp = _requests.post(endpoint, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+            resp.raise_for_status()
+            return resp.text
+        except Exception as e:
+            last_err = e
+            status = getattr(getattr(e, "response", None), "status_code", 0)
+            text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
+            if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
+                global _llm_cooldown_until
+                _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
+                log.warning(
+                    "LLM quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
+                    status, _LLM_COOLDOWN_MINUTES,
+                )
+                return None
+            if status in (502, 503, 504, 429) and attempt < retries:
+                sleep_s = 1.5 * (2 ** attempt)
+                log.debug("LLM transient error HTTP %s; retrying in %.1fs", status, sleep_s)
+                time.sleep(sleep_s)
+                continue
+            break
+    safe_endpoint = _redact_url_secret(endpoint, api_key)
+    log.warning("LLM request to %s failed: %s", safe_endpoint, last_err)
+    return None
 
 
 def _llm_extract_content(raw_text):
