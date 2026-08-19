@@ -48,6 +48,7 @@ DEFAULTS = {
         "model": "gemini-flash-latest",
         "api_key": "",
         "timeout": 30,
+        "delay_seconds": 5.0,
     },
     "tag_overrides": {
         "manga": "manga", "manhwa": "manhwa", "webtoon": "webtoon",

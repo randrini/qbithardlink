@@ -45,7 +45,7 @@ def _content_path(t: Dict, dest_cat: str) -> str | None:
 def main() -> None:
     no_llm = "--no-llm" in sys.argv
     only_category = None
-    llm_delay = 2.0  # seconds between LLM calls to avoid rate limits
+    llm_delay = float(cfg.get("llm.delay_seconds", 5.0))  # default from config
     for arg in sys.argv[1:]:
         if arg.startswith("--category="):
             only_category = arg.split("=", 1)[1]
