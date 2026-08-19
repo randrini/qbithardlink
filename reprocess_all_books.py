@@ -3,6 +3,8 @@
 
 Usage:
     docker exec qbit-classifier python /app/reprocess_all_books.py
+    docker exec qbit-classifier python /app/reprocess_all_books.py --no-llm
+    docker exec qbit-classifier python /app/reprocess_all_books.py --category=bd
 
 The script scans every torrent currently in a book/comic category,
 re-runs classify() on it, and updates the qBittorrent category if the
@@ -13,12 +15,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from typing import Dict, List
+import time
+from typing import Dict, Set
 
 import config as cfg
 from classifier import QBClient, classify, _best_torrent_name
 
-BOOK_CATEGORIES = {
+BOOK_CATEGORIES: Set[str] = {
     "books", "manga", "manhwa", "manhua", "webtoon", "comics", "bd",
     "light-novel", "ebooks", "mags", "audiobooks", "artbook", "doujinshi",
 }
@@ -40,6 +43,17 @@ def _content_path(t: Dict, dest_cat: str) -> str | None:
 
 
 def main() -> None:
+    no_llm = "--no-llm" in sys.argv
+    only_category = None
+    for arg in sys.argv[1:]:
+        if arg.startswith("--category="):
+            only_category = arg.split("=", 1)[1]
+
+    if no_llm:
+        # Disable LLM for this run by overriding config in memory.
+        cfg.CONFIG.setdefault("llm", {})["enabled"] = False
+        print("LLM disabled for this run (using metadata + regex only).")
+
     use_metadata = bool(cfg.get("metadata.enabled", True))
     hardlink_enabled = bool(cfg.get("hardlink.enabled", True))
     hardlink_script = cfg.get("hardlink.script", "/app/hardlink.sh")
@@ -50,24 +64,28 @@ def main() -> None:
 
     torrents = qb.get_torrents()
     to_reprocess = [t for t in torrents if (t.get("category") or "") in BOOK_CATEGORIES]
+    if only_category:
+        to_reprocess = [t for t in to_reprocess if t.get("category") == only_category]
 
-    print(f"Reprocessing {len(to_reprocess)} book/comic torrents...")
+    print(f"Reprocessing {len(to_reprocess)} book/comic torrents...", flush=True)
     changed = 0
-    for t in to_reprocess:
+    for idx, t in enumerate(to_reprocess, 1):
         h = t["hash"]
         name = t.get("name", "")
         files = qb.get_torrent_files(h)
         classify_name = _best_torrent_name(name, files)
+        print(f"[{idx}/{len(to_reprocess)}] {name[:70]:70s} ...", flush=True)
         cat, conf, reasons = classify(classify_name, t.get("tags", ""), files=files, use_metadata=use_metadata)
         if cat == "skip":
+            print("    → skip (video/non-book)", flush=True)
             continue
 
         old_cat = t.get("category", "")
         if cat == old_cat:
-            print(f"  {name[:70]:70s} → {cat} (unchanged)")
+            print(f"    → {cat} (unchanged)", flush=True)
             continue
 
-        print(f"  {name[:70]:70s} → {cat} (was {old_cat}, conf={conf:.2f}) {reasons}")
+        print(f"    → {cat} (was {old_cat}, conf={conf:.2f}) {reasons}", flush=True)
 
         # Re-hardlink BEFORE changing category, same as daemon.
         content_path = _content_path(t, cat)
@@ -91,8 +109,10 @@ def main() -> None:
             qb.set_category(h, source_category)
         qb.set_category(h, cat)
         changed += 1
+        # Small sleep to avoid hammering qBittorrent API.
+        time.sleep(0.5)
 
-    print(f"Done. Re-categorized {changed} torrents.")
+    print(f"Done. Re-categorized {changed} torrents.", flush=True)
 
 
 if __name__ == "__main__":

@@ -1654,7 +1654,11 @@ def _redact_url_secret(url_or_msg: str, key: str) -> str:
     """Return a copy with the API key stripped for safe logging."""
     if not key:
         return url_or_msg
-    return str(url_or_msg).replace(key, "***")
+    text = str(url_or_msg)
+    # Strip the key whether it appears raw or URL-encoded.
+    for variant in (key, urllib.parse.quote(key, safe="")):
+        text = text.replace(variant, "***")
+    return text
 
 
 def _llm_request(payload):
