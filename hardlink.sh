@@ -37,10 +37,15 @@ case "$torrentCategory" in
   manga)        destDir="$MEDIA_ROOT/manga" ;;
   manhwa)       destDir="$MEDIA_ROOT/manhwa" ;;
   webtoon)      destDir="$MEDIA_ROOT/webtoon" ;;
+  manhua)       destDir="$MEDIA_ROOT/manhua" ;;
   comics)       destDir="$MEDIA_ROOT/comics" ;;
   bd)           destDir="$MEDIA_ROOT/bd" ;;
   light-novel)  destDir="$MEDIA_ROOT/light-novel" ;;
   ebooks)       destDir="$MEDIA_ROOT/ebooks" ;;
+  mags)         destDir="$MEDIA_ROOT/mags" ;;
+  audiobooks)   destDir="$MEDIA_ROOT/audiobooks" ;;
+  artbook)      destDir="$MEDIA_ROOT/artbook" ;;
+  doujinshi)    destDir="$MEDIA_ROOT/doujinshi" ;;
   books)        destDir="$MEDIA_ROOT/_unprocessed" ;;
   *)            log "[!] Unknown category \"$torrentCategory\" — skipping"; exit 0 ;;
 esac

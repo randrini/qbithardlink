@@ -31,11 +31,16 @@ QB_USER = cfg.get("qb.user", "bidalos")
 BOOK_CATEGORIES: Dict[str, str] = {
     "manga": "/data/books/torrents/manga",
     "manhwa": "/data/books/torrents/manhwa",
+    "manhua": "/data/books/torrents/manhua",
     "webtoon": "/data/books/torrents/webtoon",
     "comics": "/data/books/torrents/comics",
     "bd": "/data/books/torrents/bd",
     "light-novel": "/data/books/torrents/light-novel",
     "ebooks": "/data/books/torrents/ebooks",
+    "mags": "/data/books/torrents/mags",
+    "audiobooks": "/data/books/torrents/audiobooks",
+    "artbook": "/data/books/torrents/artbook",
+    "doujinshi": "/data/books/torrents/doujinshi",
     "books": "/data/books/torrents",  # fallback / needs-review
 }
 

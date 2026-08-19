@@ -1535,7 +1535,9 @@ def lookup_category(title, google_books_key=None, comicvine_key=None, signals=No
 #: Allowed LLM output formats → internal category strings.
 _LLM_FORMAT_TO_CATEGORY = {
     "manga": "manga",
+    "manhwa": "manhwa",
     "webtoon": "webtoon",
+    "manhua": "manhua",
     "comics": "comics",
     "comic": "comics",
     "bd": "bd",
@@ -1546,6 +1548,8 @@ _LLM_FORMAT_TO_CATEGORY = {
     "book": "ebooks",
     "audiobook": "audiobook",
     "audiobooks": "audiobook",
+    "artbook": "artbook",
+    "doujinshi": "doujinshi",
 }
 
 #: LLM settings (config.yaml `llm:` section, env-overridable).
@@ -1835,8 +1839,11 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
             "Return JSON {\"format\":\"...\",\"sources\":[\"...\"]}. "
-            "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
-            "Identify the book/comic from the release name and your own knowledge. "
+            "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobook, artbook, doujinshi.\n"
+            "CRITICAL RULE: classify by the ORIGINAL work's country/format, not the language of this release. "
+            "A US Marvel/DC/Image comic translated to French (Urban Comics, Delcourt, etc.) is still 'comics'. "
+            "A Japanese manga translated to French is 'manga'. "
+            "A Franco-Belgian original creation is 'bd'.\n"
             "If the proposed category matches the real format, return that format with sources confirming why. "
             "If it is wrong, return the correct format with sources. "
             "Be concise. A source can be 'title contains ...', 'publisher ...', 'series is known as ...', etc."
@@ -1845,7 +1852,11 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         prompt = (
             "You classify book/comics torrents. Identify the actual book/comic from the release name and "
             "return JSON {\"format\":\"...\",\"sources\":[\"...\"]}.\n"
-            "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
+            "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobook, artbook, doujinshi.\n"
+            "CRITICAL RULE: classify by the ORIGINAL work's country/format, not the language of this release. "
+            "A US Marvel/DC/Image comic translated to French (Urban Comics, Delcourt, etc.) is still 'comics'. "
+            "A Japanese manga translated to French is 'manga'. "
+            "A Franco-Belgian original creation is 'bd'.\n"
             f"Raw release name: {safe_title}\n"
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"

@@ -48,6 +48,7 @@ default_category: "ebooks"
 tag_overrides:
   manga: manga
   manhwa: manhwa
+  manhua: manhua
   webtoon: webtoon
   comics: comics
   bd: bd
@@ -55,6 +56,24 @@ tag_overrides:
   ebooks: ebooks
   mags: mags
   audiobooks: audiobooks
+  artbook: artbook
+  doujinshi: doujinshi
+
+# ── Book/comics categories used by the classifier ────────────────────────
+# Map internal category name → qBittorrent category.
+categories:
+  manga: manga
+  manhwa: manhwa
+  manhua: manhua
+  webtoon: webtoon
+  comics: comics
+  bd: bd
+  light-novel: light-novel
+  ebooks: ebooks
+  mags: mags
+  audiobooks: audiobooks
+  artbook: artbook
+  doujinshi: doujinshi
 
 # ── Metadata providers ────────────────────────────────────────────────────
 # Enable/disable providers and set per-provider rate limits (seconds).
@@ -209,6 +228,29 @@ rules:
       - ["(?i)\\[cbz\\]", 0.4]
       - ["(?i)\\bcbr\\b", 0.4]
       - ["(?i)\\bcb[rz]\\b", 0.4]
+  manhua:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bmanhua\\b", 1.0]
+      - ["(?i)\\bchinese\\b(?=.*\\b(comic|manga|manhua)\\b)", 0.8]
+      - ["(?i)\\bcn[- ]?comic\\b", 1.0]
+      - ["(?i)\\b[cbz]", 0.3]
+  artbook:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bartbook\\b", 1.0]
+      - ["(?i)\\bart[- ]book\\b", 1.0]
+      - ["(?i)\\billustrations\\b", 0.9]
+      - ["(?i)\\bsetting materials\\b", 0.9]
+      - ["(?i)\\bvisual works\\b", 0.9]
+      - ["(?i)\\bdoujinshi\\b", 0.9]
+  doujinshi:
+    min_score: 0.9
+    patterns:
+      - ["(?i)\\bdoujin(?:shi)?\\b", 1.0]
+      - ["(?i)\\bcircle\\b", 0.7]
+      - ["(?i)\\bcomiket\\b", 1.0]
+      - ["(?i)\\b[cbz]", 0.3]
   light-novel:
     min_score: 0.9
     patterns:

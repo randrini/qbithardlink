@@ -132,15 +132,26 @@ def has_jp_magazine(name):
 # let us (a) keep the relevant words in the cleaned search title and
 # (b) target a small subset of metadata providers first, falling back to all
 # providers when the signals are wrong or missing.
-_MANGA_TOKENS = {"manga", "manhwa", "webtoon", "shonen", "shojo", "seinen", "josei"}
-_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "cbz", "cbr"}
+_MANGA_TOKENS = {"manga", "manhwa", "webtoon", "shonen", "shojo", "seinen", "josei", "scanlation"}
+_MANHUA_TOKENS = {"manhua", "chinese comic", "cn comic"}
+_ARTBOOK_TOKENS = {"artbook", "art book", "illustrations", "visual works", "setting materials"}
+_DOUJINSHI_TOKENS = {"doujin", "doujinshi"}
+_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "cbz", "cbr", "annual", "one shot", "one-shot"}
+# Strong origin/publisher signals that should win over French translation/publisher signals.
+_US_COMIC_ORIGIN_TOKENS = {
+    "marvel", "marvel comics", "dc", "dc comics", "image comics", "dark horse",
+    "idw", "boom", "boom studios", "vertigo", "wildstorm", "valiant", "dynamite",
+    "superman", "batman", "spider-man", "spiderman", "x-men", "xmen", "wolverine",
+    "iron man", "captain america", "thor", "hulk", "avengers", "justice league",
+    "harley quinn", "wonder woman", "green lantern", "flash", "miles morales",
+}
 _COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo"}
 _BD_TOKENS = {
-    "bd", "bande dessinee", "tome", "franco belge", "integrale", "glenat",
+    "bd", "bande dessinee", "tome", "franco belge", "integrale", "glénat", "glenat",
     "dupuis", "casterman", "le lombard", "dargaud", "delcourt", "bamboo",
     "albin michel", "soleil", "tonkam", "ki-oon", "jungle",
 }
-_LN_TOKENS = {"light novel", "ln"}
+_LN_TOKENS = {"light novel", "ln", "ranobe"}
 _AUDIOBOOK_TOKENS = {"audiobook", "m4b"}
 _FRENCH_TOKENS = {"french", "fr", "vostfr", "truefrench"}
 #: French accented characters commonly found in BD/comic titles but rare in
@@ -221,8 +232,9 @@ def _classify_by_extension(signals):
     unambiguous; otherwise return None.
 
     .cbz/.cbr are comic archives — disambiguate using other signals:
-      - French / BD markers → bd
-      - Manga/CJK markers    → manga
+      - US/English comic origin markers → comics (even if French/BD signals)
+      - Manga/CJK/manhwa/webtoon markers → manga
+      - BD/French markers and no US origin → bd
       - Otherwise            → comics
     .epub/.mobi default to ebooks unless light-novel signals exist.
     .m4b/.mp3 (non-music)    → audiobook.
@@ -233,6 +245,7 @@ def _classify_by_extension(signals):
     has_epub = "epub" in matched
     has_mobi = "mobi" in matched
     has_audio = any(m.startswith("audio:") for m in matched)
+    us_origin = "us-comic-origin" in matched
 
     if has_audio:
         return "audiobook", 0.95, ["dominant audio extension"]
@@ -241,10 +254,12 @@ def _classify_by_extension(signals):
             return "light-novel", 0.9, [f"dominant {('epub' if has_epub else 'mobi')} + light-novel signal"]
         return "ebooks", 0.9, [f"dominant {('epub' if has_epub else 'mobi')} extension"]
     if has_cbz_cbr:
+        if us_origin:
+            return "comics", 0.95, ["dominant comic-archive + US comic origin"]
+        if signals.get("manga") or signals.get("manhwa") or signals.get("webtoon"):
+            return "manga", 0.95, ["dominant comic-archive + manga/manhwa/webtoon signal"]
         if signals.get("bd") or signals.get("french"):
             return "bd", 0.95, ["dominant comic-archive + French/BD signal"]
-        if signals.get("manga"):
-            return "manga", 0.95, ["dominant comic-archive + manga signal"]
         return "comics", 0.9, ["dominant comic-archive extension"]
     return None
 
@@ -253,25 +268,31 @@ def extract_signals(name, files=None):
     """Detect content-type signals from a raw release name and optionally
     the torrent's file list.
 
-    Returns a dict with boolean flags (manga, comics, bd, light_novel,
-    audiobook, french) plus a `matched` list of the tokens that fired, for
-    logging.
+    Returns a dict with boolean flags (manga, manhwa, webtoon, manhua,
+    comics, bd, light_novel, audiobook, artbook, doujinshi, french) plus a
+    `matched` list of the tokens that fired, for logging.
     """
     signals = {
-        "manga": False, "comics": False, "bd": False,
-        "light_novel": False, "audiobook": False, "french": False,
+        "manga": False, "manhwa": False, "webtoon": False, "manhua": False,
+        "comics": False, "bd": False, "light_novel": False,
+        "audiobook": False, "artbook": False, "doujinshi": False,
+        "french": False,
         "matched": [],
     }
 
     # First: inspect actual file extensions when the torrent content is known.
-    # Release names often omit cbz/cbr/epub/pdf, so the real format signal
-    # is in the files themselves.
     if files:
         file_signals = _extract_extension_signals(files)
         for k, v in file_signals.items():
             if k != "matched" and v:
                 signals[k] = True
         signals["matched"].extend(file_signals.get("matched", []))
+
+    # US/English comics origin signals win over French translation markers.
+    us_origin = _has_any_token(name, _US_COMIC_ORIGIN_TOKENS)
+    if us_origin:
+        signals["comics"] = True
+        signals["matched"].append("us-comic-origin")
 
     if has_cjk(name):
         signals["manga"] = True
@@ -281,15 +302,28 @@ def extract_signals(name, files=None):
         signals["manga"] = True
         signals["matched"].append("manga-token")
 
-    if _has_any_token(name, _COMIC_TOKENS) or _has_any_token(name, _COMIC_PUBLISHERS):
+    if _has_any_token(name, _MANHUA_TOKENS):
+        signals["manhua"] = True
+        signals["matched"].append("manhua-token")
+
+    if _has_any_token(name, _ARTBOOK_TOKENS):
+        signals["artbook"] = True
+        signals["matched"].append("artbook-token")
+
+    if _has_any_token(name, _DOUJINSHI_TOKENS):
+        signals["doujinshi"] = True
+        signals["matched"].append("doujinshi-token")
+
+    # Only add generic comic tokens if not already flagged as US-origin comics.
+    if not us_origin and (_has_any_token(name, _COMIC_TOKENS) or _has_any_token(name, _COMIC_PUBLISHERS)):
         signals["comics"] = True
         signals["matched"].append("comics-token")
 
     if _has_any_token(name, _BD_TOKENS):
         # "tome" is a French volume marker that also appears in audiobook
         # releases; don't let it fire a BD signal when the release is clearly
-        # an audiobook.
-        if not (_has_any_token(name, _AUDIOBOOK_TOKENS) or _has_any_token(name, {"mp3"})):
+        # an audiobook. Also suppress BD if US origin signal is present.
+        if not (_has_any_token(name, _AUDIOBOOK_TOKENS) or _has_any_token(name, {"mp3"}) or us_origin):
             signals["bd"] = True
             signals["matched"].append("bd-token")
 
@@ -308,11 +342,10 @@ def extract_signals(name, files=None):
         signals["french"] = True
         signals["matched"].append("french-token")
 
-    # French accented characters (é, è, ê, à, ç, etc.) are a strong hint
-    # for BD/comics, even when the only other signal is a generic comic
-    # archive extension. Fire whenever there is no manga/LN/audiobook signal.
+    # French accented characters are a strong hint for BD/comics, but NOT when
+    # a US origin signal already decided the source country.
     if not any([signals["manga"], signals["bd"], signals["light_novel"],
-                signals["audiobook"]]):
+                signals["audiobook"], signals["manhua"], signals["artbook"], signals["doujinshi"], us_origin]):
         if _FRENCH_ACCENT_RE.search(name):
             signals["bd"] = True
             signals["french"] = True
