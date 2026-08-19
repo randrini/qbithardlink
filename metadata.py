@@ -23,6 +23,9 @@ Each provider returns a normalized dict:
         "confidence": float,   # 0..1 provider match confidence
     }
 """
+from __future__ import annotations
+
+import ipaddress
 import json
 import logging
 import os
@@ -31,6 +34,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from typing import Any, Dict, List, Optional, Tuple
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("metadata")
@@ -48,14 +52,32 @@ try:
 except Exception:
     HAS_REQUESTS = False
 
-# FlareSolverr endpoint (for Cloudflare/anti-bot protected sites)
-FLARESOLVERR_URL = os.environ.get("FLARESOLVERR_URL", "http://192.168.1.116:8191")
+# FlareSolverr endpoint (for Cloudflare/anti-bot protected sites). Must be an
+# RFC1918/private address to avoid accidental SSRF to public hosts.
+FLARESOLVERR_URL = os.environ.get("FLARESOLVERR_URL", "")
 
 # Google Books API key (optional; improves ebook/comic/manga resolution)
 GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "").strip()
 
 # ComicVine API key (required for ComicVineProvider)
 COMICVINE_API_KEY = os.environ.get("COMICVINE_API_KEY", "").strip()
+
+
+def _is_private_url(url: str) -> bool:
+    """Return True if the URL host is an RFC1918/private or loopback address."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+        if not host:
+            return False
+        # Allow localhost names commonly used in container networks.
+        if host.lower() in {"localhost", "127.0.0.1", "::1"}:
+            return True
+        addr = ipaddress.ip_address(host)
+        return addr.is_private or addr.is_loopback
+    except ValueError:
+        # Hostname couldn't be parsed as IP; conservatively reject.
+        return False
+
 
 # Provider enable/disable + rate limits from config.yaml
 try:
@@ -68,9 +90,18 @@ try:
         GOOGLE_BOOKS_API_KEY = _cfg.get("metadata.google_books_api_key")
     if _cfg.get("metadata.comicvine_api_key"):
         COMICVINE_API_KEY = _cfg.get("metadata.comicvine_api_key")
-except Exception:
+except Exception as _e:
+    log.warning("metadata: config import failed: %s; using defaults", _e)
     _PROVIDER_SETTINGS = {}
     _META_ENABLED = True
+
+# Validate FlareSolverr URL points to a private host; disable if not.
+if FLARESOLVERR_URL and not _is_private_url(FLARESOLVERR_URL):
+    log.warning(
+        "metadata: FLARESOLVERR_URL %s does not resolve to a private host; disabling JS bypass",
+        FLARESOLVERR_URL,
+    )
+    FLARESOLVERR_URL = ""
 
 
 # Cached FlareSolverr availability flag.
@@ -238,7 +269,7 @@ class Provider:
     def _candidate(self, **kw):
         base = {
             "title": None, "format": None, "publisher": None,
-            "language": None, "country": None, "genres": [],
+            "language": None, "country": None, "year": None, "genres": [],
             "isbn": None, "confidence": 0.0, "provider": self.id,
         }
         base.update(kw)
@@ -1454,7 +1485,7 @@ def lookup_category(title, google_books_key=None, comicvine_key=None, signals=No
         targeted = _build_providers(google_books_key, comicvine_key, signals=signals)
         if targeted:
             per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(targeted), 1)
-            per_call_timeout = max(per_call_timeout, 10.0)
+            per_call_timeout = max(per_call_timeout, 20.0)
             votes, best_by_cat = _query_providers(targeted, title, per_call_timeout, deadline)
 
             # A single high-confidence match from a targeted provider is
@@ -1475,7 +1506,7 @@ def lookup_category(title, google_books_key=None, comicvine_key=None, signals=No
     # ── Phase 2: fallback to ALL providers (existing voting logic) ─────────
     providers = _build_providers(google_books_key, comicvine_key)
     per_call_timeout = float(_cfg.get("metadata.timeout_seconds", 25)) / max(len(providers), 1)
-    per_call_timeout = max(per_call_timeout, 10.0)  # slow providers throttle 2-3s before the HTTP call
+    per_call_timeout = max(per_call_timeout, 20.0)  # slow providers throttle 2-3s before the HTTP call
 
     votes, best_by_cat = _query_providers(providers, title, per_call_timeout, deadline)
     return _resolve_votes(votes, best_by_cat, providers)
@@ -1518,6 +1549,22 @@ except Exception:
 
 #: Unix timestamp until which the LLM is temporarily disabled after a quota/rate-limit error.
 _llm_cooldown_until = 0.0
+
+
+def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
+    """Escape JSON/control characters and truncate long strings for LLM prompts.
+
+    Prevents a malicious or malformed release name from injecting JSON structure
+    into the prompt and potentially manipulating the model's output format.
+    """
+    text = str(text or "")[:max_len]
+    # Neutralize curly braces and backticks so the model can't be tricked into
+    # emitting JSON by the raw input alone.
+    text = text.replace("{", "[").replace("}", "]")
+    text = text.replace("`", "'")
+    # Collapse multiple whitespace.
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _llm_enabled():
@@ -1752,13 +1799,16 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
     if matched:
         sig_parts.append("matched:" + ",".join(str(m) for m in matched[:10]))
     signals_str = ", ".join(sig_parts) if sig_parts else "none"
+    safe_title = _sanitize_for_prompt(title)
 
     if preliminary:
+        safe_prelim_cat = _sanitize_for_prompt(preliminary["category"])
+        safe_reasons = _sanitize_for_prompt(str(preliminary["reasons"]), max_len=500)
         prompt = (
             "You verify book/comics torrent classifications. The classifier "
-            f"proposed '{preliminary['category']}' (confidence {preliminary['confidence']:.2f}) "
-            f"for reasons: {preliminary['reasons']}.\n"
-            f"Raw release name: {title}\n"
+            f"proposed '{safe_prelim_cat}' (confidence {preliminary['confidence']:.2f}) "
+            f"for reasons: {safe_reasons}.\n"
+            f"Raw release name: {safe_title}\n"
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
             "Return JSON {\"format\":\"...\",\"sources\":[\"...\"]}. "
@@ -1773,7 +1823,7 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
             "You classify book/comics torrents. Identify the actual book/comic from the release name and "
             "return JSON {\"format\":\"...\",\"sources\":[\"...\"]}.\n"
             "Allowed formats: manga, webtoon, comics, bd, light-novel, ebooks, audiobook.\n"
-            f"Raw release name: {title}\n"
+            f"Raw release name: {safe_title}\n"
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
             "Use your knowledge of published works. Be concise."

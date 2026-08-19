@@ -74,35 +74,49 @@ if [[ -e "$destPath" ]]; then
   exit 0
 fi
 
-# Hardlink. cp -l creates hardlinks (same inode) instead of copies.
-# Keep stderr visible to the caller (daemon captures it) while also logging summary.
-if [[ -f "$torrentPath" ]]; then
-  if cp -l -- "$torrentPath" "$destPath"; then
-    log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
-    exit 0
-  fi
-else
+# Hardlink. For directories use cp -rl; for single files use ln to avoid
+# TOCTOU race on the existence check. Keep stderr visible to the caller
+# (daemon captures it) while also logging summary.
+link_failed=0
+if [[ -d "$torrentPath" ]]; then
+  # Recursive hardlink for folder torrents.
   if cp -rl -- "$torrentPath" "$destDir/"; then
     log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
     exit 0
   fi
+  link_failed=1
+else
+  # Atomic hardlink for single-file torrents. ln fails if destination exists,
+  # which closes the TOCTOU race with concurrent hardlink.sh invocations.
+  mkdir -p -- "$(dirname "$destPath")"
+  if ln -- "$torrentPath" "$destPath" 2>/dev/null; then
+    log "[✔] Hardlinked \"${torrentName}\" → ${destPath}"
+    exit 0
+  fi
+  if [[ -e "$destPath" ]]; then
+    log "[✔] Already imported (exists): ${destPath}"
+    exit 0
+  fi
+  link_failed=1
 fi
 
 # Cross-device fallback: hardlink failed (likely different filesystems).
 # Fall back to a copy so the library still gets the file, but warn loudly.
-log "[!] Hardlink failed for \"${torrentName}\"; falling back to copy"
-if [[ -f "$torrentPath" ]]; then
-  mkdir -p -- "$(dirname "$destPath")"
-  if cp -- "$torrentPath" "$destPath"; then
-    log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
-    log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
-    exit 0
-  fi
-else
-  if cp -r -- "$torrentPath" "$destDir/"; then
-    log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
-    log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
-    exit 0
+if [[ $link_failed -eq 1 ]]; then
+  log "[!] Hardlink failed for \"${torrentName}\"; falling back to copy"
+  if [[ -f "$torrentPath" ]]; then
+    mkdir -p -- "$(dirname "$destPath")"
+    if cp -- "$torrentPath" "$destPath"; then
+      log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
+      log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
+      exit 0
+    fi
+  else
+    if cp -r -- "$torrentPath" "$destDir/"; then
+      log "[!] Hardlink failed (cross-device?) — COPIED instead: ${destPath}"
+      log "    WARNING: this duplicates disk space. Ensure torrents and library are on the SAME filesystem."
+      exit 0
+    fi
   fi
 fi
 

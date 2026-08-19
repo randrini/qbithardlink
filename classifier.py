@@ -18,6 +18,9 @@ Usage:
   classifier.py --once     # run a single pass (for Qui automation)
   classifier.py --test     # run against corpus.txt and report accuracy
 """
+from __future__ import annotations
+
+import fcntl
 import json
 import logging
 import logging.handlers
@@ -28,6 +31,8 @@ import sys
 import time
 import urllib.error
 import urllib.parse
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # Configuration (config.yaml + env overrides)
 import config as cfg
@@ -48,7 +53,16 @@ except Exception:
 # ── Configuration (from config.yaml, env-overridable) ────────────────────
 QB_URL = cfg.get("qb.url", "http://192.168.1.116:8084")
 QB_USER = cfg.get("qb.user", "bidalos")
-QB_PASS = cfg.get("qb.password", "your-password")
+
+
+def _get_qb_password() -> str:
+    pw = os.environ.get("QB_PASS") or cfg.get("qb.password", "")
+    if not pw:
+        raise RuntimeError(
+            "qBittorrent password not configured. Set QB_PASS env var or qb.password in config."
+        )
+    return pw
+
 
 AUTO_THRESHOLD = float(cfg.get("thresholds.auto", 0.90))
 REVIEW_THRESHOLD = float(cfg.get("thresholds.review", 0.70))
@@ -475,10 +489,10 @@ def classify(name, tags=None, files=None, use_metadata=False):
 
 # ── qBittorrent API helpers ───────────────────────────────────────────────
 class QBClient:
-    def __init__(self, url, user, password):
-        self.url = url.rstrip("/")
-        self.user = user
-        self.password = password
+    def __init__(self, url=None, user=None, password=None):
+        self.url = (url or QB_URL).rstrip("/")
+        self.user = user or QB_USER
+        self.password = password or _get_qb_password()
         self.session = requests.Session()
         self.session.headers.update({"Referer": self.url, "User-Agent": "qbithardlink/1.0"})
 
@@ -513,21 +527,38 @@ class QBClient:
             log.debug("failed to fetch file list for %s: %s", hash_hex, e)
             return []
 
-    def set_category(self, hashes, category):
+    def set_category(self, hashes: str | List[str], category: str, max_retries: int = 2) -> None:
+        if isinstance(hashes, list):
+            hashes = "|".join(hashes)
         # qBittorrent returns 409 if the category does not exist yet.
-        try:
-            self._request("torrents/setCategory", {"hashes": hashes, "category": category})
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 409:
-                self._request("torrents/createCategory", {"category": category, "savePath": ""})
-                self._request("torrents/setCategory", {"hashes": hashes, "category": category})
-            else:
-                raise
+        for attempt in range(max_retries):
+            try:
+                self._request(
+                    "torrents/setCategory", {"hashes": hashes, "category": category}
+                )
+                return
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 409 and attempt == 0:
+                    try:
+                        self._request(
+                            "torrents/createCategory",
+                            {"category": category, "savePath": ""},
+                        )
+                    except requests.exceptions.HTTPError:
+                        # Category may have been created concurrently; ignore.
+                        pass
+                    # Loop will retry setCategory.
+                else:
+                    raise
 
-    def add_tags(self, hashes, tags):
+    def add_tags(self, hashes: str | List[str], tags: str) -> None:
+        if isinstance(hashes, list):
+            hashes = "|".join(hashes)
         self._request("torrents/addTags", {"hashes": hashes, "tags": tags})
 
-    def set_auto_management(self, hashes, enable=True):
+    def set_auto_management(self, hashes: str | List[str], enable: bool = True) -> None:
+        if isinstance(hashes, list):
+            hashes = "|".join(hashes)
         try:
             self._request(
                 "torrents/setAutoManagement",
@@ -536,7 +567,11 @@ class QBClient:
         except requests.exceptions.HTTPError as e:
             # Older/newer qBittorrent builds may use enableAutoTMM or disagree
             # on parameter names; auto-management is optional, so log and continue.
-            log.warning("setAutoManagement failed (%s %s) — continuing", e.response.status_code, e.response.reason)
+            log.warning(
+                "setAutoManagement failed (%s %s) — continuing",
+                e.response.status_code,
+                e.response.reason,
+            )
 
 
 
@@ -553,21 +588,35 @@ STATE_FILE = os.path.join(STATE_DIR, ".classifier_state.json")
 DONE_TAGS = frozenset({"review", "classified"})
 
 
-def _load_state():
+def _load_state() -> set[str]:
     try:
         with open(STATE_FILE) as f:
-            return set(json.load(f).get("processed", []))
+            data = json.load(f)
+            return set(data.get("processed", []))
     except Exception:
         return set()
 
 
-def _save_state(processed):
+def _save_state(processed: set[str]) -> None:
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        with open(STATE_FILE, "w") as f:
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w") as f:
             json.dump({"processed": sorted(processed)}, f)
+        os.replace(tmp, STATE_FILE)
     except Exception as e:
         log.warning("could not write state file: %s", e)
+
+
+def _with_state_lock[T](fn, *args, **kwargs) -> T:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    lock_path = os.path.join(STATE_DIR, ".classifier_state.lock")
+    with open(lock_path, "w") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            return fn(*args, **kwargs)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def process_once(qb, use_metadata=False, state=None):
@@ -729,7 +778,7 @@ def main():
         run_test()
         return
 
-    qb = QBClient(QB_URL, QB_USER, QB_PASS)
+    qb = QBClient(QB_URL, QB_USER)
     qb.login()
 
     if "--once" in sys.argv:

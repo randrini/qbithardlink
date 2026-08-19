@@ -52,6 +52,7 @@ services:
       - ./metadata.py:/app/metadata.py:ro
       - ./config.py:/app/config.py:ro
       - ./config.yaml:/app/config.yaml:ro
+      - ./qblib.py:/app/qblib.py:ro
       - ./hardlink.sh:/app/hardlink.sh:ro
       - ./bootstrap_categories.py:/app/bootstrap_categories.py:ro
       - ./move_torrents_to_books_share.py:/app/move_torrents_to_books_share.py:ro

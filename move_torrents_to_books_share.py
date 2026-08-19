@@ -9,18 +9,13 @@ The script reads every torrent from qBittorrent, computes its new save path
 under /data/books/torrents/<category>/, and calls setLocation for each.
 Torrents in excluded video categories (movies, tv, *arr) are ignored.
 """
-import json
-import os
+from __future__ import annotations
+
 import sys
-import urllib.parse
-import urllib.request
+from typing import Dict, List, Tuple
 
-sys.path.insert(0, "/app")
 import config as cfg
-
-QB_URL = cfg.get("qb.url", "http://192.168.1.116:8084").rstrip("/")
-QB_USER = cfg.get("qb.user", "bidalos")
-QB_PASS = cfg.get("qb.password", "")
+from qblib import QBClient
 
 NEW_BASE = "/data/books/torrents"
 
@@ -36,57 +31,7 @@ EXCLUDED = {
 }
 
 
-class QBClient:
-    def __init__(self, url, user, password):
-        self.url = url
-        self.user = user
-        self.password = password
-        self.session = None
-        try:
-            import requests
-            self.session = requests.Session()
-        except Exception:
-            self.session = None
-
-    def login(self):
-        if self.session:
-            r = self.session.post(f"{self.url}/api/v2/auth/login", data={"username": self.user, "password": self.password})
-            if not r.ok:
-                raise RuntimeError(f"login failed: HTTP {r.status_code}")
-        else:
-            data = urllib.parse.urlencode({"username": self.user, "password": self.password}).encode()
-            req = urllib.request.Request(f"{self.url}/api/v2/auth/login", data=data)
-            with urllib.request.urlopen(req) as resp:
-                self.cookie = resp.headers.get("Set-Cookie")
-
-    def get_torrents(self):
-        if self.session:
-            r = self.session.get(f"{self.url}/api/v2/torrents/info")
-            r.raise_for_status()
-            return r.json()
-        req = urllib.request.Request(f"{self.url}/api/v2/torrents/info")
-        if getattr(self, "cookie", None):
-            req.add_header("Cookie", self.cookie)
-        with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
-
-    def set_location(self, hashes, location):
-        if isinstance(hashes, list):
-            hashes = "|".join(hashes)
-        data = {"hashes": hashes, "location": location}
-        if self.session:
-            r = self.session.post(f"{self.url}/api/v2/torrents/setLocation", data=data)
-            r.raise_for_status()
-        else:
-            body = urllib.parse.urlencode(data).encode()
-            req = urllib.request.Request(f"{self.url}/api/v2/torrents/setLocation", data=body)
-            if getattr(self, "cookie", None):
-                req.add_header("Cookie", self.cookie)
-            with urllib.request.urlopen(req) as resp:
-                resp.read()
-
-
-def new_path_for(category):
+def new_path_for(category: str) -> str | None:
     cat = (category or "").strip().lower()
     if cat in EXCLUDED:
         return None
@@ -95,19 +40,19 @@ def new_path_for(category):
     return f"{NEW_BASE}/_unknown"
 
 
-def main():
+def main() -> None:
     dry_run = "--dry-run" in sys.argv
 
-    qb = QBClient(QB_URL, QB_USER, QB_PASS)
+    qb = QBClient()
     qb.login()
     torrents = qb.get_torrents()
 
-    print(f"qBittorrent: {QB_URL}")
+    print(f"qBittorrent: {qb.url}")
     print(f"Torrents:   {len(torrents)}")
     print(f"Mode:       {'dry-run' if dry_run else 'LIVE'}")
     print("-" * 70)
 
-    planned = []
+    planned: List[Tuple[str, str, str, str, str]] = []
     for t in torrents:
         cat = t.get("category", "") or ""
         new_loc = new_path_for(cat)
@@ -132,19 +77,14 @@ def main():
         print("Dry run — no changes made. Pass without --dry-run to execute.")
         return
 
-    # Move in batches of 10 hashes to avoid overly long API calls.
-    batch = []
-    current_loc = None
+    # Move in batches grouped by destination location.
+    batch_by_loc: Dict[str, List[str]] = {}
     for h, name, old, new, cat in planned:
-        if current_loc and current_loc != new:
-            qb.set_location([x[0] for x in batch], current_loc)
-            print(f"Moved {len(batch)} torrents → {current_loc}")
-            batch = []
-        current_loc = new
-        batch.append((h, name, old, new, cat))
-    if batch and current_loc:
-        qb.set_location([x[0] for x in batch], current_loc)
-        print(f"Moved {len(batch)} torrents → {current_loc}")
+        batch_by_loc.setdefault(new, []).append(h)
+
+    for location, hashes in batch_by_loc.items():
+        qb.set_location(hashes, location)
+        print(f"Moved {len(hashes)} torrents → {location}")
 
     print("Done. qBittorrent will move the files on disk; if the old and new")
     print("paths are on the same filesystem this will be near-instant.")

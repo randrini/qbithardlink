@@ -12,6 +12,7 @@ COPY classifier.py /app/classifier.py
 COPY metadata.py /app/metadata.py
 COPY config.py /app/config.py
 COPY config.yaml /app/config.yaml
+COPY qblib.py /app/qblib.py
 COPY hardlink.sh /app/hardlink.sh
 COPY corpus.txt /app/corpus.txt
 COPY bootstrap_categories.py /app/bootstrap_categories.py
