@@ -1995,9 +1995,13 @@ def _llm_request_for_provider(payload, provider, retries=2):
         log.debug("%s request to %s failed: %s", provider_id, safe_endpoint, last_err)
         return _result(False, status=last_status, error=str(last_err), continue_=True)
 
-    # ── OpenAI-compatible / Ollama ───────────────────────────────────────
+    # ── OpenAI-compatible / Ollama ─────────────────────────────────────────
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    # OpenRouter requires referer/app headers; add them when talking to openrouter.ai.
+    if "openrouter.ai" in endpoint:
+        headers.setdefault("HTTP-Referer", "https://github.com/randrini/qbithardlink")
+        headers.setdefault("X-Title", "qbithardlink")
 
     if endpoint.rstrip("/").endswith("/v1/chat/completions"):
         body = {
@@ -2007,6 +2011,7 @@ def _llm_request_for_provider(payload, provider, retries=2):
             "max_tokens": 300,
         }
     else:
+        # Ollama native /api/chat
         body = {
             "model": model,
             "messages": payload.get("messages"),
@@ -2032,6 +2037,10 @@ def _llm_request_for_provider(payload, provider, retries=2):
                 log.debug("%s transient error HTTP %s; retrying in %.1fs", provider_id, last_status, sleep_s)
                 time.sleep(sleep_s)
                 continue
+            # Log 4xx response body to make provider-specific errors debuggable.
+            if last_status in (400, 401, 404, 422) and getattr(getattr(e, "response", None), "text", None):
+                err_text_short = e.response.text[:300]
+                log.debug("%s HTTP %s response: %s", provider_id, last_status, err_text_short)
             break
     safe_endpoint = _redact_url_secret(endpoint, api_key)
     log.debug("%s request to %s failed: %s", provider_id, safe_endpoint, last_err)
