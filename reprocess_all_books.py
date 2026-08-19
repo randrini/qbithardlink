@@ -97,7 +97,12 @@ def main() -> None:
         else:
             print(f"    → {cat} (was {old_cat}, conf={conf:.2f})", flush=True)
 
-        # Show who/why when useful metadata is available.
+        # Always show why the category was chosen.
+        why = "; ".join(str(r) for r in reasons)
+        if why:
+            print(f"      why: {why}", flush=True)
+
+        # Show who/where metadata is available.
         if metadata:
             parts = []
             if metadata.get("authors"):
@@ -113,9 +118,6 @@ def main() -> None:
                 parts.append(f"{metadata['country']} (country)")
             if parts:
                 print(f"      by: {', '.join(parts)}", flush=True)
-            why = "; ".join(str(r) for r in reasons)
-            if why:
-                print(f"      why: {why}", flush=True)
 
         if cat == old_cat:
             continue
