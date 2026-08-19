@@ -1775,8 +1775,9 @@ def _llm_extract_content(raw_text):
         return None
     if not isinstance(data, dict):
         return None
-    # Gemini direct JSON response (responseMimeType=application/json).
-    if "format" in data and "sources" in data:
+    # LLM returned the JSON object we asked for directly (any backend).
+    # We require at least "format"; "sources" is optional and will default to [].
+    if "format" in data:
         return raw_text
     # OpenAI-compatible: choices[0].message.content
     choices = data.get("choices")
@@ -1785,6 +1786,13 @@ def _llm_extract_content(raw_text):
         content = msg.get("content")
         if content:
             return content
+    # Gemini v1beta native when responseMimeType is NOT application/json or when
+    # the model still wraps JSON text inside candidates[].content.parts[].text.
+    candidates = data.get("candidates")
+    if isinstance(candidates, list) and candidates:
+        parts = (candidates[0].get("content") or {}).get("parts") or []
+        if parts and parts[0].get("text"):
+            return parts[0]["text"]
     # Ollama /api/chat: message.content
     msg = data.get("message") or {}
     if msg.get("content"):
