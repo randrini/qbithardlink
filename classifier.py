@@ -438,104 +438,53 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
     return DEFAULT_CATEGORY, 0.5, reasons + [f"cascade undetermined → default {DEFAULT_CATEGORY} (review)"]
 
 
-def _classify(name, tags, files, signals, use_metadata, llm_enabled, llm_mode, _llm):
-    """Core classification with LLM as primary arbiter when enabled.
-
-    Order:
-      0. Manual tag override (highest)
-      0.5 Video skip
-      1. CJK fast-path
-      2. LLM primary classification (when enabled) — high-confidence verdict
-      3. Metadata providers
-      4. Extension-based classification
-      5. Regex rules
-      6. Default ebooks
-    """
-    reasons = []
-    norm = normalize(name)
-
-    # 0. Manual override via tag
-    for tag in tags:
-        if tag in TAG_OVERRIDES:
-            return tag, 1.0, [f"manual tag override: {tag}"]
-
-    # 0.5 Skip obvious video releases
-    if is_video(name):
-        return "skip", 0.0, ["video release: skip"]
-
-    # 1. CJK fast-path
-    if has_cjk(name):
-        if has_jp_volume(name) or has_jp_magazine(name):
-            return "manga", 1.0, ["CJK + Japanese volume/magazine marker"]
-        return "manga", 0.95, ["CJK characters"]
-
-    # 2. LLM as primary arbiter when enabled.
-    if llm_enabled and _llm is not None:
-        try:
-            # Always pass raw-ish name and signals so the LLM can do its own reasoning.
-            llm_cat, _llm_conf, llm_reasons = _llm(
-                name,
-                files=files,
-                signals=signals,
-                preliminary=None,
-            )
-            if llm_cat:
-                # LLM verdict is authoritative when enabled.
-                return llm_cat, 0.95, ["llm-primary"] + llm_reasons
-        except Exception as e:
-            reasons.append(f"llm error: {e}")
-
-    # 3. Metadata lookup
-    if use_metadata and HAS_METADATA and lookup_category is not None:
-        try:
-            cat, conf, prov, title = lookup_category(
-                clean_release_name(name, signals), signals=signals
-            )
-            if cat:
-                sig_str = ",".join(signals.get("matched") or [])
-                reasons.append(f"metadata:{prov} → {title!r} (signals: {sig_str})")
-                return cat, conf, reasons
-        except Exception as e:
-            reasons.append(f"metadata error: {e}")
-
-    # 4. Extension-based classification
-    ext_result = _classify_by_extension(signals)
-    if ext_result:
-        ext_cat, ext_conf, ext_reasons = ext_result
-        return ext_cat, ext_conf, reasons + ext_reasons
-
-    # 5. Regex rules
-    for cat, patterns, min_score in RULES:
-        score = 0.0
-        cat_reasons = []
-        for pattern, weight in patterns:
-            if re.search(pattern, norm):
-                score += weight
-                cat_reasons.append(f"{cat}:{pattern}")
-        if score >= min_score:
-            return cat, min(score, 1.0), reasons + cat_reasons
-
-    # 6. Default ebooks
-    return DEFAULT_CATEGORY, 0.5, reasons + [f"cascade undetermined → default {DEFAULT_CATEGORY} (review)"]
-
-
 def classify(name, tags=None, files=None, use_metadata=False):
     """Return (category, confidence, reasons).
 
-    The LLM is the primary arbiter when enabled. Manual overrides, video skip,
-    and CJK characters are still evaluated first because they are cheap and
-    reliable. If the LLM is disabled or errors out, the non-LLM cascade takes
-    over.
+    Priority:
+      0. Manual tag override (highest)
+      0.5 Video skip
+      1. CJK characters → manga (very strong signal)
+      2. Preliminary cascade: metadata → extensions → regex → default ebooks
+      3. LLM final arbiter (when enabled): reviews the preliminary result and
+         overrides it if wrong. The LLM verdict has higher rank than the
+         cascade, but it runs last so providers/regex can keep working when
+         the LLM is unavailable.
     """
     tags = [t.strip().lower() for t in (tags or "").split(",") if t.strip()]
     signals = extract_signals(name, files=files)
 
+    # ── Preliminary cascade ────────────────────────────────────────────────
+    prelim_cat, prelim_conf, prelim_reasons = _preliminary_classify(
+        name, tags, files, signals, use_metadata
+    )
+
+    # ── LLM final arbiter ──────────────────────────────────────────────────
     llm_enabled = cfg.get("llm.enabled", False)
     _llm = llm_classify if llm_classify is not None else None
+    if llm_enabled and _llm and prelim_cat != "skip":
+        try:
+            llm_cat, _llm_conf, llm_reasons = _llm(
+                name,
+                files=files,
+                signals=signals,
+                preliminary={
+                    "category": prelim_cat,
+                    "confidence": prelim_conf,
+                    "reasons": prelim_reasons,
+                },
+            )
+            if llm_cat:
+                if llm_cat == prelim_cat:
+                    # LLM confirms: keep the cascade category but boost confidence.
+                    conf = max(prelim_conf, 0.90)
+                    return prelim_cat, conf, prelim_reasons + ["llm-confirmed"] + llm_reasons
+                # LLM disagrees: authoritative override.
+                return llm_cat, 0.95, [f"llm-override:{prelim_cat}→{llm_cat}"] + llm_reasons
+        except Exception as e:
+            prelim_reasons.append(f"llm error: {e}")
 
-    return _classify(
-        name, tags, files, signals, use_metadata, llm_enabled, None, _llm
-    )
+    return prelim_cat, prelim_conf, prelim_reasons
 
 
 # ── qBittorrent API helpers ───────────────────────────────────────────────
