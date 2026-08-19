@@ -1552,16 +1552,22 @@ _llm_cooldown_until = 0.0
 
 
 def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
-    """Escape JSON/control characters and truncate long strings for LLM prompts.
+    """Escape JSON/control characters and normalize a release name for LLM prompts.
 
     Prevents a malicious or malformed release name from injecting JSON structure
-    into the prompt and potentially manipulating the model's output format.
+    into the prompt and normalizes dots/underscores/hyphens between words to
+    spaces, similar to how video release parsers clean titles.
     """
     text = str(text or "")[:max_len]
     # Neutralize curly braces and backticks so the model can't be tricked into
     # emitting JSON by the raw input alone.
     text = text.replace("{", "[").replace("}", "]")
     text = text.replace("`", "'")
+    # Normalize separators between words: dots/underscores/hyphens become spaces,
+    # but keep hyphens attached to words where they likely belong (e.g. "re-release").
+    text = re.sub(r"(?<=\w)[._](?=\w)", " ", text)
+    text = re.sub(r"(?<=\w)-(?=\d{4}\b)", " ", text)  # "Title-2025" → "Title 2025"
+    text = re.sub(r"(?<=\d{4})-(?=\w)", " ", text)   # "2025-Title" → "2025 Title"
     # Collapse multiple whitespace.
     text = re.sub(r"\s+", " ", text).strip()
     return text

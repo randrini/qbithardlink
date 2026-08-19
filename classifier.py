@@ -84,9 +84,16 @@ _JP_MAG_RE = re.compile(r"(?:週刊|月刊|ビッグコミック|ヤングマガ
 # The daemon only processes "books" category torrents, but selftest.py may
 # analyze all. Skip obvious video releases instead of routing them to ebooks.
 _VIDEO_RE = re.compile(
-    r"(?i)\b(S\d{1,3}E\d{1,4}|S\d{1,3}\s+E\d{1,4}|\d{1,2}x\d{1,2}|\b\d{3,4}p\b|\b(?:720|1080|2160)p\b|"
-    r"x264|x265|HEVC|WEB[- ]?DL|WEB[- ]?Rip|BluRay|HDTV|HDRip|DVDRip|CAM|TS\b|"
-    r"XXX\b|Nubiles|New Sensations|HOTWIFE|porn|adult)"
+    r"(?i)\b("
+    r"S\d{1,3}E\d{1,4}|S\d{1,3}\s+E\d{1,4}|\d{1,2}x\d{1,2}|"
+    r"\b\d{3,4}p\b|\b(?:720|1080|2160)p\b|"
+    r"x264\b|x265\b|\bHEVC\b|\bH\.264\b|\bH\.265\b|"
+    r"\bWEB[- ]?DL\b|\bWEB[- ]?Rip\b|\bBluRay\b|\bBDRip\b|\bHDRip\b|\bDVDRip\b|\bHDTV\b|\bCAM\b|\bTS\b|"
+    r"\bDDP\d\.\d\b|\bDTS[- ]?HD\b|\bTrueHD\b|\bEAC3\b|"
+    r"\bHDR10\b|\bDV\b|\bDolby\s*Vision\b|\bREPACK\b|\bPROPER\b|\bUNRATED\b|\bEXTENDED\b|\bRERiP\b|"
+    r"\bAMZN\b|\bNF\b|\bDSNP\b|\bHULU\b|\bATVP\b|\bHBO\b|\bMAX\b|"
+    r"\bXXX\b|\bNubiles\b|\bNew Sensations\b|\bHOTWIFE\b|\bporn\b|\badult\b|\bOnlyFans\b"
+    r")"
 )
 
 
