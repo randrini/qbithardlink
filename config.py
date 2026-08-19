@@ -44,8 +44,8 @@ DEFAULTS = {
     "llm": {
         "enabled": False,
         "mode": "fallback",  # "fallback" = only when cascade is uncertain; "verify" = always check
-        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
-        "model": "gemini-3.6-flash",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "model": "gemini-flash-latest",
         "api_key": "",
         "timeout": 30,
     },
