@@ -1546,8 +1546,8 @@ _LLM_FORMAT_TO_CATEGORY = {
     "ebooks": "ebooks",
     "ebook": "ebooks",
     "book": "ebooks",
-    "audiobook": "audiobook",
-    "audiobooks": "audiobook",
+    "audiobook": "audiobooks",
+    "audiobooks": "audiobooks",
     "artbook": "artbook",
     "doujinshi": "doujinshi",
 }
@@ -1852,7 +1852,7 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
             "Return JSON {\"format\":\"...\",\"sources\":[\"...\"]}. "
-            "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobook, artbook, doujinshi.\n"
+            "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobooks, artbook, doujinshi.\n"
             "CLASSIFICATION RULE — apply in this exact order:\n"
             "1. If the series/character is originally from Marvel, DC, Image, Dark Horse, IDW, Boom, Valiant, "
             "   or is a well-known US superhero (Superman, Batman, Spider-Man, X-Men, Avengers, etc.), "
@@ -1869,7 +1869,7 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         prompt = (
             "You classify book/comics torrents. Identify the actual book/comic from the release name and "
             "return JSON {\"format\":\"...\",\"sources\":[\"...\"]}.\n"
-            "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobook, artbook, doujinshi.\n"
+            "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobooks, artbook, doujinshi.\n"
             "CLASSIFICATION RULE — apply in this exact order:\n"
             "1. If the series/character is originally from Marvel, DC, Image, Dark Horse, IDW, Boom, Valiant, "
             "   or is a well-known US superhero (Superman, Batman, Spider-Man, X-Men, Avengers, etc.), "

@@ -133,8 +133,8 @@ metadata:
 llm:
   enabled: false
   mode: "fallback"     # "fallback" = only when cascade is uncertain; "verify" = always check
-  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent"
-  model: "gemini-flash-lite-latest"
+  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+  model: "gemini-2.0-flash"
   api_key: ""          # your Gemini API key (or set LLM_API_KEY in .env)
   timeout: 30          # seconds per request
   cooldown_minutes: 60 # how long to disable LLM after a quota/rate-limit error

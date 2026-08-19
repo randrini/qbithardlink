@@ -45,14 +45,25 @@ def _content_path(t: Dict, dest_cat: str) -> str | None:
 def main() -> None:
     no_llm = "--no-llm" in sys.argv
     only_category = None
+    llm_delay = 2.0  # seconds between LLM calls to avoid rate limits
     for arg in sys.argv[1:]:
         if arg.startswith("--category="):
             only_category = arg.split("=", 1)[1]
+        if arg.startswith("--delay="):
+            try:
+                llm_delay = float(arg.split("=", 1)[1])
+            except ValueError:
+                pass
 
     if no_llm:
         # Disable LLM for this run by overriding config in memory.
         cfg.CONFIG.setdefault("llm", {})["enabled"] = False
         print("LLM disabled for this run (using metadata + regex only).")
+    else:
+        # Check if LLM is actually enabled in config
+        llm_enabled = bool(cfg.get("llm.enabled", False))
+        if llm_enabled:
+            print(f"LLM enabled (mode={cfg.get('llm.mode', 'fallback')}, delay={llm_delay}s between calls).")
 
     use_metadata = bool(cfg.get("metadata.enabled", True))
     hardlink_enabled = bool(cfg.get("hardlink.enabled", True))
@@ -109,8 +120,12 @@ def main() -> None:
             qb.set_category(h, source_category)
         qb.set_category(h, cat)
         changed += 1
-        # Small sleep to avoid hammering qBittorrent API.
-        time.sleep(0.5)
+        # Throttle: sleep between LLM calls to avoid 429 rate limits,
+        # plus a small delay for qBittorrent API.
+        if not no_llm:
+            time.sleep(llm_delay)
+        else:
+            time.sleep(0.5)
 
     print(f"Done. Re-categorized {changed} torrents.", flush=True)
 
