@@ -78,7 +78,10 @@ metadata:
 
 llm:
   enabled: false
-  mode: "fallback"      # "fallback" = only when cascade is uncertain; "verify" = always check
+  # When enabled, the LLM acts as the PRIMARY arbiter. It runs before metadata
+  # providers and regex, and its verdict is trusted at high confidence. If the
+  # LLM is unreachable, the cascade falls back to metadata → regex → extensions.
+  mode: "primary"        # "primary" = LLM first when enabled; legacy "fallback"/"verify" also accepted
   endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent"
   model: "gemini-flash-lite-latest"
   api_key: ""           # or set LLM_API_KEY env var
