@@ -33,8 +33,10 @@ DEFAULTS = {
     "default_category": "ebooks",
     "metadata": {
         "enabled": True,
-        "timeout_seconds": 25,
-        "flaresolverr_url": "http://192.168.1.116:8193",
+        "timeout_seconds": 45,
+        "flaresolverr_url": "",
+        "flaresolverr_retries": 3,
+        "flaresolverr_backoff_seconds": 2.0,
         "google_books_api_key": "",
         "comicvine_api_key": "",
         "providers": {},

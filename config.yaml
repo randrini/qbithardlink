@@ -61,10 +61,12 @@ tag_overrides:
 # Keys can be set here or via env vars (GOOGLE_BOOKS_API_KEY).
 metadata:
   enabled: true
-  timeout_seconds: 25        # max time to spend querying providers per title
-  flaresolverr_url: "http://192.168.1.116:8193"
-  google_books_api_key: ""    # or set GOOGLE_BOOKS_API_KEY env var
-  comicvine_api_key: ""       # or set COMICVINE_API_KEY env var
+  timeout_seconds: 45           # max time to spend querying providers per title
+  flaresolverr_url: "http://192.168.1.116:8193"   # Trawl/FlareSolverr/Byparr
+  flaresolverr_retries: 3      # retry count for JS solver requests
+  flaresolverr_backoff_seconds: 2.0  # base exponential backoff
+  google_books_api_key: ""      # or set GOOGLE_BOOKS_API_KEY env var
+  comicvine_api_key: ""         # or set COMICVINE_API_KEY env var
   providers:
     mangadex:
       enabled: true

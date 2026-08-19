@@ -6,7 +6,81 @@ qb:
   url: "http://192.168.1.116:8084"
   user: "bidalos"
   password: "your-real-password"       # or set QB_PASS env var
+  source_category: "books"            # category the daemon watches
+
+thresholds:
+  auto: 0.90      # auto-route when confidence >= this
+  review: 0.70    # tag "review" when confidence < this
+
+poll_interval: 10
+
+default_category: "ebooks"
+
+library:
+  root: "/data/books/library"
+
+hardlink:
+  enabled: true
+  script: "/app/hardlink.sh"
+
+log:
+  file: "/app/logs/classifier.log"
+  level: "INFO"
 
 metadata:
-  flaresolverr_url: "http://192.168.1.116:8193"   # Trawl API port on host (container 8191)
-  google_books_api_key: ""                         # or set GOOGLE_BOOKS_API_KEY env var
+  enabled: true
+  # Total budget for all provider calls (seconds). Each call gets at least 20 s.
+  timeout_seconds: 45
+  # Trawl / FlareSolverr / Byparr URL. Must be a private/container host.
+  flaresolverr_url: "http://192.168.1.116:8193"
+  # Retry config for JS solver requests
+  flaresolverr_retries: 3
+  flaresolverr_backoff_seconds: 2.0
+  # Optional API keys (also overridable via env vars)
+  google_books_api_key: ""
+  comicvine_api_key: ""
+  # Provider enable/disable and rate limits (seconds between calls).
+  providers:
+    mangadex:
+      enabled: true
+      rate_limit: 0.25
+    mangabaka:
+      enabled: true
+      rate_limit: 2.25
+    jikan:
+      enabled: true
+      rate_limit: 0.35
+    kitsu:
+      enabled: true
+      rate_limit: 1.50
+    planetebd:
+      enabled: true
+      rate_limit: 3.00
+    bedetheque:
+      enabled: true
+      rate_limit: 3.00
+      # Bedetheque is Cloudflare-protected; requires FlareSolverr/Trawl/Byparr.
+    bdtheque:
+      enabled: true
+      rate_limit: 3.00
+    comicvine:
+      enabled: true
+      rate_limit: 1.00
+    googlebooks:
+      enabled: true
+      rate_limit: 0.50
+    openlibrary:
+      enabled: true
+      rate_limit: 1.00
+    ranonedb:
+      enabled: true
+      rate_limit: 1.00
+
+llm:
+  enabled: false
+  mode: "fallback"      # "fallback" = only when cascade is uncertain; "verify" = always check
+  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent"
+  model: "gemini-flash-lite-latest"
+  api_key: ""           # or set LLM_API_KEY env var
+  timeout: 30
+  cooldown_minutes: 60  # disable LLM for this long after a quota/rate-limit error

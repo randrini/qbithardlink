@@ -84,6 +84,8 @@ try:
     import config as _cfg
     _PROVIDER_SETTINGS = _cfg.get_provider_settings()
     _META_ENABLED = bool(_cfg.get("metadata.enabled", True))
+    _FLARESOLVERR_RETRIES = int(_cfg.get("metadata.flaresolverr_retries", 3))
+    _FLARESOLVERR_BACKOFF = float(_cfg.get("metadata.flaresolverr_backoff_seconds", 2.0))
     if _cfg.get("metadata.flaresolverr_url"):
         FLARESOLVERR_URL = _cfg.get("metadata.flaresolverr_url")
     if _cfg.get("metadata.google_books_api_key"):
@@ -94,6 +96,8 @@ except Exception as _e:
     log.warning("metadata: config import failed: %s; using defaults", _e)
     _PROVIDER_SETTINGS = {}
     _META_ENABLED = True
+    _FLARESOLVERR_RETRIES = 3
+    _FLARESOLVERR_BACKOFF = 2.0
 
 # Validate FlareSolverr URL points to a private host; disable if not.
 if FLARESOLVERR_URL and not _is_private_url(FLARESOLVERR_URL):
@@ -138,27 +142,40 @@ def _flaresolverr_available():
 
 
 def _flaresolverr_get(url, max_timeout=15000):
-    """Fetch a URL through FlareSolverr/Trawl (bypasses Cloudflare/anti-bot)."""
+    """Fetch a URL through FlareSolverr/Trawl (bypasses Cloudflare/anti-bot).
+
+    Retries with exponential backoff on timeout/connection errors.
+    """
     if not HAS_REQUESTS:
         return None
     if not _flaresolverr_available():
         return None
-    try:
-        base = FLARESOLVERR_URL.rstrip("/")
-        endpoint = f"{base}/v1" if not base.endswith("/v1") else base
-        resp = _requests.post(
-            endpoint,
-            json={"cmd": "request.get", "url": url, "maxTimeout": max_timeout},
-            timeout=max_timeout / 1000 + 5,
-        )
-        data = resp.json()
-        if data.get("status") != "ok":
-            log.warning("FlareSolverr error: %s", data.get("message"))
-            return None
-        return data.get("solution", {}).get("response")
-    except Exception as e:
-        log.warning("FlareSolverr request failed: %s", e)
-        return None
+
+    base = FLARESOLVERR_URL.rstrip("/")
+    endpoint = f"{base}/v1" if not base.endswith("/v1") else base
+    payload = {"cmd": "request.get", "url": url, "maxTimeout": max_timeout}
+    # Network timeout slightly longer than the browser maxTimeout so the solver
+    # has a chance to return a proper error response before we give up.
+    net_timeout = max_timeout / 1000 + 5
+
+    last_error = None
+    for attempt in range(max(1, _FLARESOLVERR_RETRIES)):
+        try:
+            resp = _requests.post(endpoint, json=payload, timeout=net_timeout)
+            data = resp.json()
+            if data.get("status") != "ok":
+                log.warning("FlareSolverr error: %s", data.get("message"))
+                return None
+            return data.get("solution", {}).get("response")
+        except Exception as e:
+            last_error = e
+            if attempt < _FLARESOLVERR_RETRIES - 1:
+                wait = _FLARESOLVERR_BACKOFF * (2 ** attempt)
+                log.debug("FlareSolverr attempt %d failed (%s); retrying in %.1fs", attempt + 1, e, wait)
+                time.sleep(wait)
+            else:
+                log.warning("FlareSolverr request failed after %d attempts: %s", _FLARESOLVERR_RETRIES, e)
+    return None
 
 # ── HTTP helper (stdlib only, no external deps) ──────────────────────────
 _UA = "qbit-classifier/1.0 (metadata lookup)"
