@@ -102,4 +102,4 @@ llm:
   #     api_key: "sk-or-v1-..."
   #     timeout: 30
 
-  cooldown_minutes: 60  # disable LLM for this long after a quota/rate-limit error
+  cooldown_minutes: 10  # disable LLM for this long after all providers are rate-limited (set lower for free-tier bulk runs)

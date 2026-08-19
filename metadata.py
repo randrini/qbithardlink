@@ -1702,10 +1702,10 @@ _LLM_FORMAT_TO_CATEGORY = {
 #: LLM settings (config.yaml `llm:` section, env-overridable).
 try:
     _LLM_ENABLED = bool(_cfg.get("llm.enabled", False))
-    _LLM_COOLDOWN_MINUTES = float(_cfg.get("llm.cooldown_minutes", 60) or 60)
+    _LLM_COOLDOWN_MINUTES = float(_cfg.get("llm.cooldown_minutes", 10) or 10)
 except Exception:
     _LLM_ENABLED = False
-    _LLM_COOLDOWN_MINUTES = 60.0
+    _LLM_COOLDOWN_MINUTES = 10.0
 
 #: Legacy single-provider config (kept for backward compatibility).
 try:

@@ -151,7 +151,7 @@ llm:
   #     timeout: 30
   providers: []
   delay_seconds: 5.0   # seconds between LLM calls to stay within free-tier RPM limits
-  cooldown_minutes: 60 # how long to disable LLM after a quota/rate-limit error
+  cooldown_minutes: 10 # how long to disable LLM after all providers are rate-limited (free-tier users may want 5)
 
 # ── Regex rules (fast-path fallback when metadata is off/unavailable) ─────
 # Each category has a list of (regex, weight) patterns and a min_score.
