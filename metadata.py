@@ -1650,6 +1650,13 @@ def _parse_llm_json(text):
     return None
 
 
+def _redact_url_secret(url_or_msg: str, key: str) -> str:
+    """Return a copy with the API key stripped for safe logging."""
+    if not key:
+        return url_or_msg
+    return str(url_or_msg).replace(key, "***")
+
+
 def _llm_request(payload):
     """POST a chat payload to the configured endpoint.
 
@@ -1701,7 +1708,8 @@ def _llm_request(payload):
             log.warning("Gemini response had no candidates/content for prompt")
             return None
         except Exception as e:
-            log.warning("Gemini request to %s failed: %s", endpoint, e)
+            safe_endpoint = _redact_url_secret(endpoint, api_key)
+            log.warning("Gemini request to %s failed: %s", safe_endpoint, e)
             return None
 
     # ── OpenAI-compatible ─────────────────────────────────────────────────
@@ -1724,7 +1732,7 @@ def _llm_request(payload):
             "options": {"temperature": 0.0, "num_predict": 300},
         }
     try:
-        resp = _requests.post(url, json=body, headers=headers, timeout=_LLM_TIMEOUT)
+        resp = _requests.post(endpoint, json=body, headers=headers, timeout=_LLM_TIMEOUT)
         resp.raise_for_status()
         return resp.text
     except Exception as e:
@@ -1740,7 +1748,8 @@ def _llm_request(payload):
                 status, _LLM_COOLDOWN_MINUTES,
             )
         else:
-            log.warning("LLM request to %s failed: %s", endpoint, e)
+            safe_endpoint = _redact_url_secret(endpoint, api_key)
+            log.warning("LLM request to %s failed: %s", safe_endpoint, e)
         return None
 
 

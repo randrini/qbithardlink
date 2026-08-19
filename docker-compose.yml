@@ -14,6 +14,11 @@ services:
     build: .
     container_name: qbit-classifier
     restart: unless-stopped
+    # Use the host's working DNS directly; Docker's embedded resolver (127.0.0.11)
+    # can be unreliable on Unraid/VPN setups and cause intermittent name-resolution failures.
+    dns:
+      - ${DNS_PRIMARY:-192.168.1.172}
+      - ${DNS_SECONDARY:-89.168.34.79}
     environment:
       # User/Group that will own created files/hardlinks (Unraid default: nobody/users).
       - PUID=${PUID:-99}
