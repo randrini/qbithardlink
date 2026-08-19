@@ -133,27 +133,38 @@ def has_jp_magazine(name):
 # (b) target a small subset of metadata providers first, falling back to all
 # providers when the signals are wrong or missing.
 _MANGA_TOKENS = {"manga", "manhwa", "webtoon", "shonen", "shojo", "seinen", "josei", "scanlation"}
-_MANHUA_TOKENS = {"manhua", "chinese comic", "cn comic"}
-_ARTBOOK_TOKENS = {"artbook", "art book", "illustrations", "visual works", "setting materials"}
+_MANHUA_TOKENS = {"manhua", "chinese comic", "cn comic", "long strip", "vertical scroll"}
+_ARTBOOK_TOKENS = {"artbook", "art book", "illustrations", "visual works", "setting materials", "character book", "fanbook"}
 _DOUJINSHI_TOKENS = {"doujin", "doujinshi"}
-_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "cbz", "cbr", "annual", "one shot", "one-shot"}
+_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "cbz", "cbr", "annual", "one shot", "one-shot", "crossover", "event"}
 # Strong origin/publisher signals that should win over French translation/publisher signals.
 _US_COMIC_ORIGIN_TOKENS = {
-    "marvel", "marvel comics", "dc", "dc comics", "image comics", "dark horse",
-    "idw", "boom", "boom studios", "vertigo", "wildstorm", "valiant", "dynamite",
+    "marvel", "marvel comics", "mcu", "ultimate marvel", "max", "icon",
+    "dc", "dc comics", "d.c.", "vertigo", "wildstorm", "dc black label", "dc universe",
+    "image comics", "image", "dark horse", "dark horse comics",
+    "idw", "idw publishing", "boom", "boom! studios", "boom studios", "aftershock", "valiant", "dynamite",
+    "titan comics", "oni press", "archie", "archie comics",
     "superman", "batman", "spider-man", "spiderman", "x-men", "xmen", "wolverine",
-    "iron man", "captain america", "thor", "hulk", "avengers", "justice league",
-    "harley quinn", "wonder woman", "green lantern", "flash", "miles morales",
+    "iron man", "iron-man", "captain america", "thor", "hulk", "avengers", "justice league",
+    "harley quinn", "wonder woman", "green lantern", "the flash", "daredevil", "punisher",
+    "miles morales", "gwenpool", "deadpool", "venom", "carnage", "black panther",
+    "fantastic four", "x-force", "new mutants", "teen titans", "batgirl", "nightwing",
+    "guardians of the galaxy", "inhumans", " eternals", " eternals", "shazam", "aquaman",
+    "absolute batman", "absolute superman", "absolute wonder woman", "absolute batgirl",
+    "absolute flash", "absolute green lantern", "absolute justice league",
+    "panini", "panini comics", "100% marvel", "delcourt marvel",
+    "urban comics", "dc deluxe", "dc collectibles",
 }
-_COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo"}
+_COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo", "panini", "urban comics"}
 _BD_TOKENS = {
     "bd", "bande dessinee", "tome", "franco belge", "integrale", "glénat", "glenat",
     "dupuis", "casterman", "le lombard", "dargaud", "delcourt", "bamboo",
-    "albin michel", "soleil", "tonkam", "ki-oon", "jungle",
+    "albin michel", "soleil", "tonkam", "ki-oon", "jungle", "pika", "kurokawa",
+    "ankama", "dargaud", "ombres noires", "flblb", "humanoides associes",
 }
-_LN_TOKENS = {"light novel", "ln", "ranobe"}
-_AUDIOBOOK_TOKENS = {"audiobook", "m4b"}
-_FRENCH_TOKENS = {"french", "fr", "vostfr", "truefrench"}
+_LN_TOKENS = {"light novel", "ln", "ranobe", "web novel"}
+_AUDIOBOOK_TOKENS = {"audiobook", "m4b", "audible"}
+_FRENCH_TOKENS = {"french", "fr", "vostfr", "truefrench", "francais"}
 #: French accented characters commonly found in BD/comic titles but rare in
 #: English ebook releases. When present with no other strong signal, they
 #: suggest querying BD/comic providers first.
@@ -233,9 +244,10 @@ def _classify_by_extension(signals):
 
     .cbz/.cbr are comic archives — disambiguate using other signals:
       - US/English comic origin markers → comics (even if French/BD signals)
+      - Manhua signal                    → manhua
       - Manga/CJK/manhwa/webtoon markers → manga
       - BD/French markers and no US origin → bd
-      - Otherwise            → comics
+      - Otherwise                       → comics
     .epub/.mobi default to ebooks unless light-novel signals exist.
     .m4b/.mp3 (non-music)    → audiobook.
     .pdf is ambiguous; let metadata or regex decide.
@@ -256,6 +268,8 @@ def _classify_by_extension(signals):
     if has_cbz_cbr:
         if us_origin:
             return "comics", 0.95, ["dominant comic-archive + US comic origin"]
+        if signals.get("manhua"):
+            return "manhua", 0.95, ["dominant comic-archive + manhua signal"]
         if signals.get("manga") or signals.get("manhwa") or signals.get("webtoon"):
             return "manga", 0.95, ["dominant comic-archive + manga/manhwa/webtoon signal"]
         if signals.get("bd") or signals.get("french"):
@@ -436,6 +450,14 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
         if has_jp_volume(name) or has_jp_magazine(name):
             return "manga", 1.0, ["CJK + Japanese volume/magazine marker"]
         return "manga", 0.95, ["CJK characters"]
+
+    # New categories fast-path
+    if signals.get("manhua"):
+        return "manhua", 0.95, ["manhua signal"]
+    if signals.get("doujinshi"):
+        return "doujinshi", 0.95, ["doujinshi signal"]
+    if signals.get("artbook"):
+        return "artbook", 0.90, ["artbook signal"]
 
     # Metadata lookup
     if use_metadata and HAS_METADATA and lookup_category is not None:
