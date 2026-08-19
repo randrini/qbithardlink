@@ -1817,6 +1817,7 @@ def _llm_request(payload, retries=2):
     - Ollama native: everything else (assumes /api/chat format)
     Returns the raw response text or None on failure.
     """
+    global _llm_cooldown_until
     if not HAS_REQUESTS:
         log.warning("LLM classification requested but `requests` is unavailable")
         return None
@@ -1863,6 +1864,14 @@ def _llm_request(payload, retries=2):
             except Exception as e:
                 last_err = e
                 status = getattr(getattr(e, "response", None), "status_code", 0)
+                text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
+                if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
+                    _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
+                    log.warning(
+                        "Gemini quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
+                        status, _LLM_COOLDOWN_MINUTES,
+                    )
+                    return None
                 if status in (502, 503, 504) and attempt < retries:
                     sleep_s = 1.5 * (2 ** attempt)
                     log.debug("Gemini transient error HTTP %s; retrying in %.1fs", status, sleep_s)
@@ -1903,7 +1912,6 @@ def _llm_request(payload, retries=2):
             status = getattr(getattr(e, "response", None), "status_code", 0)
             text = str(getattr(getattr(e, "response", None), "text", "") or "").lower()
             if status in (429, 403) or any(k in text for k in ("quota", "rate limit", "billing", "exhausted", "insufficient_quota")):
-                global _llm_cooldown_until
                 _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
                 log.warning(
                     "LLM quota/rate-limit hit (HTTP %s). Cooling down for %.0f minutes.",
