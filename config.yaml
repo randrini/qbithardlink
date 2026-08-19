@@ -176,10 +176,8 @@ rules:
       - ["(?i)\\bmanga[- ]zip\\b", 1.0]
       - ["(?i)\\bviz media\\b", 1.0]
       - ["(?i)\\bhybrid manga\\b", 1.0]
-      - ["(?i)\\bT\\d{1,4}\\b", 0.7]
+      - ["(?i)\\bT\\d{1,4}\\b", 0.9]
       - ["(?i)\\b[0-9]{4}\\b.*\\bvol\\.?\\s*\\d+\\b", 0.3]
-      - ["(?i)\\[cbz\\]", 0.3]
-      - ["(?i)\\[cbr\\]", 0.3]
   manhwa:
     min_score: 0.9
     patterns:
@@ -188,8 +186,6 @@ rules:
       - ["(?i)\\bwebtoon\\b", 0.9]
       - ["(?i)\\bch\\.?\\d{1,4}(-ch\\.?\\d{1,4})?\\b", 1.0]
       - ["(?i)\\bep\\.?\\d{1,4}\\b", 0.9]
-      - ["(?i)\\[cbz\\]", 0.3]
-      - ["(?i)\\[cbr\\]", 0.3]
   comics:
     min_score: 0.9
     patterns:
@@ -219,13 +215,11 @@ rules:
       - ["(?i)\\bbande dessin", 1.0]
       - ["(?i)\\bfranco[- ]belge\\b", 1.0]
       - ["(?i)\\b\\[?bd\\]?\\b", 0.7]
-      - ["(?i)\\b\\[?int?egrale\\]?\\b", 0.5]
-      - ["(?i)\\b\\[?collection\\]?\\b", 0.5]
-      - ["(?i)\\b\\[?tome\\]?\\b", 0.5]
+      - ["(?i)\\b\\[?int?egrale\\]?\\b", 0.7]
+      - ["(?i)\\b\\[?collection\\]?\\b", 0.7]
+      - ["(?i)\\b\\[?tome\\]?\\b", 0.7]
       - ["(?i)\\bfr\\b", 0.3]
       - ["(?i)\\bfrench\\b", 0.3]
-      - ["(?i)\\[cbr\\]", 0.4]
-      - ["(?i)\\[cbz\\]", 0.4]
       - ["(?i)\\bcbr\\b", 0.4]
       - ["(?i)\\bcb[rz]\\b", 0.4]
   manhua:
@@ -234,7 +228,6 @@ rules:
       - ["(?i)\\bmanhua\\b", 1.0]
       - ["(?i)\\bchinese\\b(?=.*\\b(comic|manga|manhua)\\b)", 0.8]
       - ["(?i)\\bcn[- ]?comic\\b", 1.0]
-      - ["(?i)\\b[cbz]", 0.3]
   artbook:
     min_score: 0.9
     patterns:
@@ -250,7 +243,6 @@ rules:
       - ["(?i)\\bdoujin(?:shi)?\\b", 1.0]
       - ["(?i)\\bcircle\\b", 0.7]
       - ["(?i)\\bcomiket\\b", 1.0]
-      - ["(?i)\\b[cbz]", 0.3]
   light-novel:
     min_score: 0.9
     patterns:

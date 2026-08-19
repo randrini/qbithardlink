@@ -136,7 +136,7 @@ _MANGA_TOKENS = {"manga", "manhwa", "webtoon", "shonen", "shojo", "seinen", "jos
 _MANHUA_TOKENS = {"manhua", "chinese comic", "cn comic", "long strip", "vertical scroll"}
 _ARTBOOK_TOKENS = {"artbook", "art book", "illustrations", "visual works", "setting materials", "character book", "fanbook"}
 _DOUJINSHI_TOKENS = {"doujin", "doujinshi"}
-_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "cbz", "cbr", "annual", "one shot", "one-shot", "crossover", "event"}
+_COMIC_TOKENS = {"comic", "comics", "graphic novel", "superhero", "annual", "one shot", "one-shot", "crossover", "event"}
 # Strong origin/publisher signals that should win over French translation/publisher signals.
 _US_COMIC_ORIGIN_TOKENS = {
     "marvel", "marvel comics", "mcu", "ultimate marvel", "max", "icon",
@@ -154,13 +154,14 @@ _US_COMIC_ORIGIN_TOKENS = {
     "absolute flash", "absolute green lantern", "absolute justice league",
     "panini", "panini comics", "100% marvel", "delcourt marvel",
     "urban comics", "dc deluxe", "dc collectibles",
+    "swamp thing", "hellblazer", "constantine",
 }
 _COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo", "panini", "urban comics"}
 _BD_TOKENS = {
-    "bd", "bande dessinee", "tome", "franco belge", "integrale", "glénat", "glenat",
-    "dupuis", "casterman", "le lombard", "dargaud", "delcourt", "bamboo",
-    "albin michel", "soleil", "tonkam", "ki-oon", "jungle", "pika", "kurokawa",
-    "ankama", "dargaud", "ombres noires", "flblb", "humanoides associes",
+    "bd", "bande dessinee", "franco belge",
+    "glénat", "glenat", "dupuis", "casterman", "le lombard", "dargaud",
+    "delcourt", "bamboo", "albin michel", "soleil", "ombres noires",
+    "flblb", "humanoides associes", "clair de lune",
 }
 _LN_TOKENS = {"light novel", "ln", "ranobe", "web novel"}
 _AUDIOBOOK_TOKENS = {"audiobook", "m4b", "audible"}
@@ -191,6 +192,12 @@ def _extract_extension_signals(files):
     `files` is the qBittorrent `torrents/files` response: a list of dicts
     with a `name` key (relative path). The dominant non-trivial extension
     wins. Hidden/support files (.nfo, .jpg covers, .sfv) are ignored.
+
+    Note: .cbz/.cbr/.pdf are FORMAT indicators, not content-type indicators.
+    They tell us the file is a comic archive or document, but not whether
+    it's manga, BD, comics, or manhua. They are recorded as format tags but
+    do NOT set boolean content signals (comics/bd) — those must come from
+    the release name tokens or metadata.
     """
     signals = {
         "manga": False, "comics": False, "bd": False,
@@ -217,20 +224,19 @@ def _extract_extension_signals(files):
             dominant_count = count
             dominant_ext = ext
     if dominant_ext is None or dominant_count < total * 0.5:
-        # No dominant format; mixed bag, don't draw a strong conclusion.
+        # No dominant format; mixed bag, don't draw conclusions.
         return signals
 
     if dominant_ext in {".cbz", ".cbr"}:
-        signals["comics"] = True
+        # Format tag only — do NOT set comics/bd signals.
+        # .cbz/.cbr are used by manga, BD, comics, and manhua alike.
         signals["matched"].append(f"comic-archive:{dominant_ext}")
     elif dominant_ext == ".epub":
         signals["matched"].append("epub")
     elif dominant_ext == ".mobi":
         signals["matched"].append("mobi")
     elif dominant_ext == ".pdf":
-        # PDF is ambiguous (ebook, comic, BD); only flag as a weak comics/bd
-        # hint so metadata can disambiguate.
-        signals["comics"] = True
+        # PDF is ambiguous (ebook, comic, BD); record format only.
         signals["matched"].append("pdf")
     elif dominant_ext in {".m4b", ".mp3", ".ogg", ".flac", ".aac"}:
         signals["audiobook"] = True
@@ -239,18 +245,14 @@ def _extract_extension_signals(files):
 
 
 def _classify_by_extension(signals):
-    """Return a concrete category if the dominant file extension is
-    unambiguous; otherwise return None.
+    """Return a concrete category if the dominant file extension plus
+    content signals give a confident result; otherwise return None.
 
-    .cbz/.cbr are comic archives — disambiguate using other signals:
-      - US/English comic origin markers → comics (even if French/BD signals)
-      - Manhua signal                    → manhua
-      - Manga/CJK/manhwa/webtoon markers → manga
-      - BD/French markers and no US origin → bd
-      - Otherwise                       → comics
-    .epub/.mobi default to ebooks unless light-novel signals exist.
-    .m4b/.mp3 (non-music)    → audiobook.
-    .pdf is ambiguous; let metadata or regex decide.
+    File extensions alone are ambiguous — .cbz/.cbr are used by manga,
+    BD, comics, and manhua alike. They only contribute meaningfully when
+    combined with strong content-type signals from the release name.
+    The French flag alone is NOT enough to classify as BD because many
+    French translations of manga/comics exist.
     """
     matched = signals.get("matched", [])
     has_cbz_cbr = any(m.startswith("comic-archive:") for m in matched)
@@ -259,22 +261,29 @@ def _classify_by_extension(signals):
     has_audio = any(m.startswith("audio:") for m in matched)
     us_origin = "us-comic-origin" in matched
 
+    # Audio formats are content-specific → strong signal.
     if has_audio:
-        return "audiobook", 0.95, ["dominant audio extension"]
+        return "audiobooks", 0.95, ["dominant audio extension"]
+    # Epub/mobi are fairly content-specific → moderate signal.
     if has_epub or has_mobi:
         if signals.get("light_novel"):
             return "light-novel", 0.9, [f"dominant {('epub' if has_epub else 'mobi')} + light-novel signal"]
         return "ebooks", 0.9, [f"dominant {('epub' if has_epub else 'mobi')} extension"]
+    # Comic archives (.cbz/.cbr) are FORMAT indicators. They only help
+    # disambiguate when strong content signals already exist.
     if has_cbz_cbr:
         if us_origin:
-            return "comics", 0.95, ["dominant comic-archive + US comic origin"]
+            return "comics", 0.85, ["comic-archive + US comic origin signal"]
         if signals.get("manhua"):
-            return "manhua", 0.95, ["dominant comic-archive + manhua signal"]
+            return "manhua", 0.85, ["comic-archive + manhua signal"]
         if signals.get("manga") or signals.get("manhwa") or signals.get("webtoon"):
-            return "manga", 0.95, ["dominant comic-archive + manga/manhwa/webtoon signal"]
-        if signals.get("bd") or signals.get("french"):
-            return "bd", 0.95, ["dominant comic-archive + French/BD signal"]
-        return "comics", 0.9, ["dominant comic-archive extension"]
+            return "manga", 0.85, ["comic-archive + manga/manhwa/webtoon signal"]
+        if signals.get("bd"):
+            return "bd", 0.85, ["comic-archive + BD signal"]
+        # No content signals — .cbz/.cbr alone cannot determine category.
+        # Let metadata, regex, or LLM decide.
+        return None
+    # PDF is too ambiguous to classify from extension alone.
     return None
 
 
@@ -356,14 +365,25 @@ def extract_signals(name, files=None):
         signals["french"] = True
         signals["matched"].append("french-token")
 
-    # French accented characters are a strong hint for BD/comics, but NOT when
-    # a US origin signal already decided the source country.
-    if not any([signals["manga"], signals["bd"], signals["light_novel"],
-                signals["audiobook"], signals["manhua"], signals["artbook"], signals["doujinshi"], us_origin]):
-        if _FRENCH_ACCENT_RE.search(name):
-            signals["bd"] = True
-            signals["french"] = True
-            signals["matched"].append("french-accent")
+    # French accented characters suggest BD/comics, but we do NOT set bd=True
+    # here because accents also appear in travel guides, textbooks, and novels.
+    # The accent is used as a weak tiebreaker in _preliminary_classify instead.
+    if _FRENCH_ACCENT_RE.search(name):
+        signals["french"] = True
+        signals["matched"].append("french-accent")
+
+    # Detect format tags from the release name when file list is unavailable.
+    # These are FORMAT indicators (how it's packaged), not content-type signals.
+    name_lower = name.lower()
+    if not any(m.startswith("comic-archive:") for m in signals["matched"]):
+        if re.search(r"\[cb[rz]\]", name, re.I) or re.search(r"\bcb[rz]\b", name_lower):
+            signals["matched"].append("comic-archive:name")
+    if "epub" not in signals["matched"]:
+        if re.search(r"\[epub\]", name, re.I) or re.search(r"\bepub\b", name_lower):
+            signals["matched"].append("epub")
+    if "mobi" not in signals["matched"]:
+        if re.search(r"\[mobi\]", name, re.I) or re.search(r"\bmobi\b", name_lower):
+            signals["matched"].append("mobi")
 
     return signals
 
@@ -472,7 +492,28 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
         except Exception as e:
             reasons.append(f"metadata error: {e}")
 
-    # Extension-based classification
+    # Signal-based classification: use content-type signals from the release
+    # name to determine category. These are stronger than format extensions
+    # because they reflect actual content (US origin, BD publisher, manga
+    # volume markers) rather than just the archive format (.cbz/.cbr).
+    us_origin = "us-comic-origin" in signals.get("matched", [])
+    if us_origin:
+        # US comic origin wins over French translation markers.
+        return "comics", 0.90, ["US comic origin signal"] + reasons
+    if signals.get("bd"):
+        return "bd", 0.85, ["BD signal"] + reasons
+    if signals.get("manga") or signals.get("manhwa") or signals.get("webtoon"):
+        return "manga", 0.85, ["manga/manhwa/webtoon signal"] + reasons
+    if signals.get("audiobook"):
+        return "audiobooks", 0.85, ["audiobook signal"] + reasons
+    # French accent in the title with no stronger signal → likely BD.
+    # Many BD titles use accented French (Tirésias, Astérix, etc.)
+    if "french-accent" in signals.get("matched", []) and signals.get("french"):
+        has_comic_format = any(m.startswith("comic-archive:") for m in signals.get("matched", []))
+        if has_comic_format:
+            return "bd", 0.80, ["French accent + comic-archive format"] + reasons
+
+    # Extension-based classification (only when content signals confirm format)
     ext_result = _classify_by_extension(signals)
     if ext_result:
         ext_cat, ext_conf, ext_reasons = ext_result
