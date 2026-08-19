@@ -2039,8 +2039,8 @@ def _llm_request_for_provider(payload, provider, retries=2):
                 continue
             # Log 4xx response body to make provider-specific errors debuggable.
             if last_status in (400, 401, 404, 422) and getattr(getattr(e, "response", None), "text", None):
-                err_text_short = e.response.text[:300]
-                log.debug("%s HTTP %s response: %s", provider_id, last_status, err_text_short)
+                err_text_short = e.response.text[:400]
+                log.warning("%s HTTP %s response: %s", provider_id, last_status, err_text_short)
             break
     safe_endpoint = _redact_url_secret(endpoint, api_key)
     log.debug("%s request to %s failed: %s", provider_id, safe_endpoint, last_err)
