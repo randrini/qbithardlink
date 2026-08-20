@@ -1959,7 +1959,7 @@ def _llm_request_for_provider(payload, provider, retries=2):
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "temperature": 0.0,
-                "maxOutputTokens": 300,
+                "maxOutputTokens": 500,
             },
         }
         sep = "&" if "?" in endpoint else "?"
@@ -2008,7 +2008,7 @@ def _llm_request_for_provider(payload, provider, retries=2):
             "model": model,
             "messages": payload.get("messages"),
             "temperature": 0.0,
-            "max_tokens": 300,
+            "max_tokens": 500,
         }
     else:
         # Ollama native /api/chat

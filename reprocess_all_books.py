@@ -44,6 +44,7 @@ def _content_path(t: Dict, dest_cat: str) -> str | None:
 
 def main() -> None:
     no_llm = "--no-llm" in sys.argv
+    dry_run = "--dry-run" in sys.argv
     only_category = None
     llm_delay = float(cfg.get("llm.delay_seconds", 5.0))  # default from config
     for arg in sys.argv[1:]:
@@ -64,6 +65,8 @@ def main() -> None:
         llm_enabled = bool(cfg.get("llm.enabled", False))
         if llm_enabled:
             print(f"LLM enabled (mode={cfg.get('llm.mode', 'fallback')}, delay={llm_delay}s between calls).")
+    if dry_run:
+        print("DRY RUN: no categories or hardlinks will be changed.")
 
     use_metadata = bool(cfg.get("metadata.enabled", True))
     hardlink_enabled = bool(cfg.get("hardlink.enabled", True))
@@ -122,6 +125,11 @@ def main() -> None:
         if cat == old_cat:
             continue
 
+        if dry_run:
+            changed += 1
+            print("    [dry-run] would re-hardlink and change category", flush=True)
+            continue
+
         # Re-hardlink BEFORE changing category, same as daemon.
         content_path = _content_path(t, cat)
         if hardlink_enabled and content_path:
@@ -151,7 +159,7 @@ def main() -> None:
         else:
             time.sleep(0.5)
 
-    print(f"Done. Re-categorized {changed} torrents.", flush=True)
+    print(f"Done. {'Would have re-categorized' if dry_run else 'Re-categorized'} {changed} torrents.", flush=True)
 
 
 if __name__ == "__main__":

@@ -181,6 +181,10 @@ rules:
       - ["(?i)\\bI\\d{2,3}\\b", 0.8]
       - ["(?i)\\bnewspaper\\b", 1.0]
       - ["(?i)\\bpresse\\b", 0.9]
+      - ["(?i)\\bgazzetta\\b", 1.0]
+      - ["(?i)\\bcorriere\\b", 1.0]
+      - ["(?i)\\bsole 24 ore\\b", 1.0]
+      - ["(?i)\\be?book[- ]?i(dib|diver)\\b", 0.9]
   manga:
     min_score: 0.9
     patterns:

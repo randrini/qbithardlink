@@ -518,11 +518,14 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
     if signals.get("audiobook"):
         return "audiobooks", 0.85, ["audiobook signal"] + reasons
     # French accent in the title with no stronger signal → likely BD.
-    # Many BD titles use accented French (Tirésias, Astérix, etc.)
+    # Only trigger when there are no conflicting US comic or manga signals.
     if "french-accent" in signals.get("matched", []) and signals.get("french"):
         has_comic_format = any(m.startswith("comic-archive:") for m in signals.get("matched", []))
         if has_comic_format:
-            return "bd", 0.80, ["French accent + comic-archive format"] + reasons
+            # Do NOT set bd if US comic origin or manga signals are present
+            # (avoids false-BD on French editions of US comics/manga)
+            if "us-comic-origin" not in signals.get("matched", []) and not signals.get("manga"):
+                return "bd", 0.80, ["French accent + comic-archive format"] + reasons
 
     # Extension-based classification (only when content signals confirm format)
     ext_result = _classify_by_extension(signals)
