@@ -2288,13 +2288,18 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
     search_results = _langsearch_context(title)
     if search_results:
         context_lines = []
-        for r in search_results[:2]:
-            summary = r.get('summary') or ''
-            if len(summary) > 100:
-                summary = summary[:100] + '...'
-            context_lines.append(f"{r.get('title', '')} - {summary}")
+        for r in search_results[:1]:
+            title_s = str(r.get('title') or '')[:60]
+            summary = str(r.get('summary') or '')[:80]
+            if summary:
+                context_lines.append(f"Search: {title_s} - {summary}")
         if context_lines:
             prompt += "\nWeb search context:\n" + "\n".join(context_lines) + "\n"
+
+    prompt_len = len(prompt)
+    if prompt_len > 4000:
+        log.debug("LLM prompt is %d chars; truncating to 4000", prompt_len)
+        prompt = prompt[:4000]
     raw = _llm_request({"messages": [{"role": "user", "content": prompt}]})
     content = _llm_extract_content(raw)
     if not content:
