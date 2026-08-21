@@ -1863,16 +1863,71 @@ def _langsearch_context(title):
     LangSearch is a web-search API, not a chat LLM. We use its results as
     factual context for ambiguous titles (e.g. French edition of a US comic).
     Returns a list of {title, url, summary} dicts or None on failure.
+
+    Rate limiting (Free tier): QPS=1, QPM=60, QPD=1000.
+    - 1s minimum between calls (respects QPS)
+    - 60s cooldown on 429 response
+    - Cache results to avoid duplicate calls
     """
     key = (LANGSEARCH_API_KEY or str(_cfg.get("metadata.langsearch_api_key", "") or "")).strip()
     if not key:
         return None
+
+    # Rate limiting state (per-module, not per-instance)
+    if not hasattr(_langsearch_context, "_last_call"):
+        _langsearch_context._last_call = 0.0
+        _langsearch_context._cooldown_until = 0.0
+        _langsearch_context._cache = {}  # title -> results
+        _langsearch_context._daily_count = 0
+        _langsearch_context._daily_reset = 0.0
+        _langsearch_context._min_interval = 1.1  # seconds between calls (QPS=1)
+
+    now = time.time()
+
+    # Daily quota reset (resets at midnight UTC or after 24h)
+    if now - _langsearch_context._daily_reset > 86400:
+        _langsearch_context._daily_count = 0
+        _langsearch_context._daily_reset = now
+
+    # Check daily quota (leave 10% buffer)
+    if _langsearch_context._daily_count >= 900:
+        log.warning("LangSearch daily quota nearing limit (%d/1000), skipping", _langsearch_context._daily_count)
+        return None
+
+    # Check if we're in cooldown
+    if now < _langsearch_context._cooldown_until:
+        remaining = int(_langsearch_context._cooldown_until - now)
+        log.debug("LangSearch in cooldown for %ds, skipping", remaining)
+        return None
+
+    # Check cache (exact match)
+    cache_key = str(title).strip().lower()
+    if cache_key in _langsearch_context._cache:
+        log.debug("LangSearch cache hit for %r", title)
+        return _langsearch_context._cache[cache_key]
+
+    # Rate limit: wait minimum interval between calls (QPS=1)
+    elapsed = now - _langsearch_context._last_call
+    if elapsed < _langsearch_context._min_interval:
+        time.sleep(_langsearch_context._min_interval - elapsed)
+
     try:
         payload = {"query": str(title)[:200], "summary": True, "count": 3}
         headers = {"Authorization": f"Bearer {key}"}
         data = _http_post_json("https://api.langsearch.com/v1/web-search", payload, headers=headers, timeout=10)
+        _langsearch_context._last_call = time.time()
+        _langsearch_context._daily_count += 1
+
         if not isinstance(data, dict):
             return None
+
+        # Check for rate limit response
+        code = data.get("code")
+        if code == 429:
+            log.warning("LangSearch rate limited (429); entering 60s cooldown")
+            _langsearch_context._cooldown_until = time.time() + 60
+            return None
+
         pages = (data.get("data") or {}).get("webPages", {}).get("value", [])
         results = []
         for p in pages:
@@ -1883,7 +1938,12 @@ def _langsearch_context(title):
                 "url": str(p.get("url") or "").strip(),
                 "summary": str(p.get("summary") or p.get("snippet") or "").strip(),
             })
-        return results or None
+        result = results or None
+
+        # Cache the result
+        _langsearch_context._cache[cache_key] = result
+        return result
+
     except Exception as e:
         log.debug("LangSearch context failed for %r: %s", title, e)
         return None
