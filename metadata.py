@@ -65,6 +65,9 @@ GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "").strip()
 # ComicVine API key (required for ComicVineProvider)
 COMICVINE_API_KEY = os.environ.get("COMICVINE_API_KEY", "").strip()
 
+# LangSearch API key (web-search context for LLM)
+LANGSEARCH_API_KEY = os.environ.get("LANGSEARCH_API_KEY", "").strip()
+
 
 def _is_private_url(url: str) -> bool:
     """Return True if the URL host is an RFC1918/private or loopback address."""
@@ -193,6 +196,10 @@ def _http_get_json(url, params=None, headers=None, timeout=12):
 
 
 def _http_post_json(url, payload, headers=None, timeout=12):
+    """POST JSON payload and return parsed JSON response.
+
+    Used for LangSearch API and other potential POST endpoints.
+    """
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url, data=data,
@@ -1850,6 +1857,38 @@ def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
     return text
 
 
+def _langsearch_context(title):
+    """Fetch web-search snippets from LangSearch to enrich the LLM prompt.
+
+    LangSearch is a web-search API, not a chat LLM. We use its results as
+    factual context for ambiguous titles (e.g. French edition of a US comic).
+    Returns a list of {title, url, summary} dicts or None on failure.
+    """
+    key = (LANGSEARCH_API_KEY or str(_cfg.get("metadata.langsearch_api_key", "") or "")).strip()
+    if not key:
+        return None
+    try:
+        payload = {"query": str(title)[:200], "summary": True, "count": 3}
+        headers = {"Authorization": f"Bearer {key}"}
+        data = _http_post_json("https://api.langsearch.com/v1/web-search", payload, headers=headers, timeout=10)
+        if not isinstance(data, dict):
+            return None
+        pages = (data.get("data") or {}).get("webPages", {}).get("value", [])
+        results = []
+        for p in pages:
+            if not isinstance(p, dict):
+                continue
+            results.append({
+                "title": str(p.get("name") or "").strip(),
+                "url": str(p.get("url") or "").strip(),
+                "summary": str(p.get("summary") or p.get("snippet") or "").strip(),
+            })
+        return results or None
+    except Exception as e:
+        log.debug("LangSearch context failed for %r: %s", title, e)
+        return None
+
+
 def _llm_enabled():
     """Whether the LLM final-arbiter is enabled (env/config) and not in cooldown."""
     if not _LLM_ENABLED:
@@ -2245,6 +2284,17 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
             "Use your knowledge of published works. Be concise."
         )
 
+    # Web search context (LangSearch) - add if API key present
+    search_results = _langsearch_context(title)
+    if search_results:
+        context_lines = []
+        for r in search_results[:2]:
+            summary = r.get('summary') or ''
+            if len(summary) > 100:
+                summary = summary[:100] + '...'
+            context_lines.append(f"{r.get('title', '')} - {summary}")
+        if context_lines:
+            prompt += "\nWeb search context:\n" + "\n".join(context_lines) + "\n"
     raw = _llm_request({"messages": [{"role": "user", "content": prompt}]})
     content = _llm_extract_content(raw)
     if not content:

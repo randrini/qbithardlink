@@ -43,6 +43,7 @@ DEFAULTS = {
         "flaresolverr_backoff_seconds": 2.0,
         "google_books_api_key": "",
         "comicvine_api_key": "",
+        "langsearch_api_key": "",
         "providers": {},
     },
     "llm": {
@@ -129,6 +130,8 @@ def _env_override(cfg):
         cfg["metadata"]["google_books_api_key"] = os.environ["GOOGLE_BOOKS_API_KEY"]
     if os.environ.get("COMICVINE_API_KEY"):
         cfg["metadata"]["comicvine_api_key"] = os.environ["COMICVINE_API_KEY"]
+    if os.environ.get("LANGSEARCH_API_KEY"):
+        cfg["metadata"]["langsearch_api_key"] = os.environ["LANGSEARCH_API_KEY"]
     if os.environ.get("LLM_ENABLED"):
         cfg["llm"]["enabled"] = os.environ["LLM_ENABLED"].strip().lower() in ("1", "true", "yes", "on")
     if os.environ.get("LLM_MODE"):

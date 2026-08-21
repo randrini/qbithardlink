@@ -42,6 +42,7 @@ services:
       # Optional API keys.
       - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
       - COMICVINE_API_KEY=${COMICVINE_API_KEY:-}
+      - LANGSEARCH_API_KEY=${LANGSEARCH_API_KEY:-}
       # LLM final-arbiter (off by default). Supports Gemini v1beta native API,
       # OpenAI-compatible endpoints, and Ollama. Set LLM_ENABLED=true to activate.
       - LLM_ENABLED=${LLM_ENABLED:-false}

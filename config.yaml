@@ -86,6 +86,8 @@ metadata:
   flaresolverr_backoff_seconds: 2.0  # base exponential backoff
   google_books_api_key: ""      # or set GOOGLE_BOOKS_API_KEY env var
   comicvine_api_key: ""         # or set COMICVINE_API_KEY env var
+  langsearch_api_key: ""        # or set LANGSEARCH_API_KEY env var
+
   providers:
     mangadex:
       enabled: true
