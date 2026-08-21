@@ -1726,8 +1726,8 @@ except Exception:
     _LEGACY_LLM_API_KEY = ""
     _LEGACY_LLM_TIMEOUT = 30.0
 
-#: Unix timestamp until which the LLM is temporarily disabled after a quota/rate-limit error.
-_llm_cooldown_until = 0.0
+#: Per-provider cooldown timestamps (provider_id -> unix timestamp).
+_llm_provider_cooldowns: Dict[str, float] = {}
 
 
 def _load_llm_providers():
@@ -1890,16 +1890,19 @@ def _langsearch_context(title):
 
 
 def _llm_enabled():
-    """Whether the LLM final-arbiter is enabled (env/config) and not in cooldown."""
+    """Whether the LLM final-arbiter is enabled and at least one provider is ready."""
     if not _LLM_ENABLED:
         return False
     providers = _load_llm_providers()
     if not providers:
         log.debug("LLM enabled but no providers configured; skipping")
         return False
-    if time.time() < _llm_cooldown_until:
-        remaining = int(_llm_cooldown_until - time.time())
-        log.debug("LLM in cooldown for %ss; skipping", remaining)
+    now = time.time()
+    ready = [p for p in providers if now >= _llm_provider_cooldowns.get(p.get("id", ""), 0)]
+    if not ready:
+        soonest = min(_llm_provider_cooldowns.values())
+        remaining = int(soonest - now)
+        log.debug("All LLM providers in cooldown for %ss; skipping", max(remaining, 0))
         return False
     return True
 
@@ -1960,6 +1963,39 @@ def _redact_url_secret(url_or_msg: str, key: str) -> str:
     return text
 
 
+def _provider_prompt_limit(provider_id, endpoint):
+    """Return a safe prompt character limit for a given provider host.
+
+    Groq's free "compound" model rejects inputs much larger than ~1000 chars.
+    Gemini and OpenRouter can handle far larger prompts.
+    """
+    host = (provider_id + " " + endpoint).lower()
+    if "groq" in host:
+        return 900
+    if "nvidia" in host or "nim" in host:
+        return 2000
+    return 4000
+
+
+def _truncate_llm_payload(payload, max_chars):
+    """Return a copy of the payload with user message content truncated to max_chars."""
+    if not isinstance(payload, dict):
+        return payload
+    payload = dict(payload)
+    messages = payload.get("messages")
+    if isinstance(messages, list) and messages:
+        new_messages = []
+        for msg in messages:
+            if isinstance(msg, dict) and "content" in msg:
+                msg = dict(msg)
+                content = str(msg["content"])
+                if len(content) > max_chars:
+                    msg["content"] = content[:max_chars]
+            new_messages.append(msg)
+        payload["messages"] = new_messages
+    return payload
+
+
 def _llm_request_for_provider(payload, provider, retries=2):
     """POST a chat payload to a single provider and return the result.
 
@@ -1979,6 +2015,10 @@ def _llm_request_for_provider(payload, provider, retries=2):
     timeout = float(provider.get("timeout", 30) or 30)
     provider_id = provider.get("id", "provider")
     headers = {"Content-Type": "application/json"}
+
+    # Truncate prompt to provider-specific input limit to avoid 413 Payload Too Large.
+    max_prompt = _provider_prompt_limit(provider_id, endpoint)
+    payload = _truncate_llm_payload(payload, max_prompt)
 
     def _result(ok, text=None, status=0, error=None, continue_=True):
         return {"ok": ok, "text": text, "status": status, "error": error, "continue": continue_}
@@ -2098,13 +2138,12 @@ def _is_llm_rate_limit_error(status, error):
 def _llm_request(payload, retries=2):
     """POST a chat payload to each configured provider until one succeeds.
 
-    Iterates over providers from `_load_llm_providers()`. On rate-limit / quota
-    for a provider, logs at debug and tries the next. On transient failures, retries
-    within the provider up to `retries` times, then moves to the next provider.
-    If all providers fail due to rate-limit, sets a global cooldown. Otherwise
-    returns None and logs the last provider error.
+    Iterates over providers from `_load_llm_providers()`. Providers currently
+    in per-provider cooldown are skipped. On rate-limit / quota for a provider,
+    that provider is put in cooldown and the next provider is tried. On transient
+    failures, retries within the provider up to `retries` times, then moves to
+    the next provider. If all providers are rate-limited, logs a warning.
     """
-    global _llm_cooldown_until
     if not HAS_REQUESTS:
         log.warning("LLM classification requested but `requests` is unavailable")
         return None
@@ -2114,30 +2153,45 @@ def _llm_request(payload, retries=2):
         log.debug("No LLM providers configured; skipping")
         return None
 
+    now = time.time()
     all_rate_limited = True
     last_error = None
     last_status = 0
     last_provider_id = None
 
     for provider in providers:
+        provider_id = provider.get("id", "provider")
+        if now < _llm_provider_cooldowns.get(provider_id, 0):
+            remaining = int(_llm_provider_cooldowns[provider_id] - now)
+            log.debug("%s is in cooldown for %ss; skipping", provider_id, max(remaining, 0))
+            continue
+
         result = _llm_request_for_provider(payload, provider, retries=retries)
         if result["ok"]:
             return result["text"]
+
         last_status = result.get("status") or 0
         last_error = result.get("error")
-        last_provider_id = provider.get("id", "provider")
-        if not _is_llm_rate_limit_error(last_status, last_error):
+        last_provider_id = provider_id
+
+        if _is_llm_rate_limit_error(last_status, last_error):
+            _llm_provider_cooldowns[provider_id] = now + (_LLM_COOLDOWN_MINUTES * 60)
+            log.debug(
+                "%s rate-limited/quota (HTTP %s). Cooling down for %.0f minutes.",
+                provider_id, last_status or "?", _LLM_COOLDOWN_MINUTES,
+            )
+        else:
             all_rate_limited = False
+
         if result.get("continue"):
             continue
         # Provider signalled a non-continue failure (should not happen in current impl).
         break
 
     if all_rate_limited:
-        _llm_cooldown_until = time.time() + (_LLM_COOLDOWN_MINUTES * 60)
         log.warning(
-            "All LLM providers rate-limited/quota (last HTTP %s). Cooling down for %.0f minutes.",
-            last_status or "?", _LLM_COOLDOWN_MINUTES,
+            "All LLM providers rate-limited/quota (last %s HTTP %s).",
+            last_provider_id or "provider", last_status or "?",
         )
     else:
         safe_msg = _redact_url_secret(str(last_error or "unknown error"), "")
