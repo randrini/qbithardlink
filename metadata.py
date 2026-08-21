@@ -1966,12 +1966,9 @@ def _redact_url_secret(url_or_msg: str, key: str) -> str:
 def _provider_prompt_limit(provider_id, endpoint):
     """Return a safe prompt character limit for a given provider host.
 
-    Groq's free "compound" model rejects inputs much larger than ~1000 chars.
-    Gemini and OpenRouter can handle far larger prompts.
+    Gemini and OpenRouter can handle large prompts. NVIDIA NIM has smaller limits.
     """
     host = (provider_id + " " + endpoint).lower()
-    if "groq" in host:
-        return 700
     if "nvidia" in host or "nim" in host:
         return 2000
     return 4000

@@ -151,8 +151,6 @@ llm:
   #     model: "google/gemma-4-26b-a4b-it:free"
   #     api_key: "sk-or-v1-..."
   #     timeout: 30
-  # Note: Groq free models do not return clean JSON, so they are not recommended
-  # as an LLM fallback for this classifier.
   providers: []
   delay_seconds: 10.0  # seconds between LLM calls to stay within free-tier RPM limits
   cooldown_minutes: 5  # per-provider cooldown after rate-limit/quota
