@@ -261,6 +261,16 @@ def _title_match_score(a, b, min_overlap=0.6):
     if len(shared) < 2:
         return 0.0
     score = len(shared) / len(ta)
+
+    # Penalty: if the provider title has extra "type" words (guidebook, artbook,
+    # etc.) that are NOT in the query, the match is likely a different edition.
+    _EXTRA_TYPE_WORDS = {"guidebook", "artbook", "artbook", "encyclopedia",
+                         "companion", "illustrated", "definitive", "deluxe",
+                         "absolute", "omnibus", "hardcover", "paperback"}
+    provider_extra = ta - tb  # words in provider title but NOT in query
+    if provider_extra & _EXTRA_TYPE_WORDS:
+        score *= 0.4  # heavy penalty — likely a different book
+
     return score if score >= min_overlap else 0.0
 
 

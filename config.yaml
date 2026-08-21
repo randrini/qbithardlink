@@ -185,6 +185,11 @@ rules:
       - ["(?i)\\bcorriere\\b", 1.0]
       - ["(?i)\\bsole 24 ore\\b", 1.0]
       - ["(?i)\\be?book[- ]?i(dib|diver)\\b", 0.9]
+      - ["(?i)\\bL'Equipe\\b", 1.0]
+      - ["(?i)\\bLe Monde\\b", 1.0]
+      - ["(?i)\\bLe Figaro\\b", 1.0]
+      - ["(?i)\\b20 Minutes\\b", 1.0]
+      - ["(?i)\\bMetro\\b", 0.9]
   manga:
     min_score: 0.9
     patterns:
