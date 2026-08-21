@@ -1971,7 +1971,7 @@ def _provider_prompt_limit(provider_id, endpoint):
     """
     host = (provider_id + " " + endpoint).lower()
     if "groq" in host:
-        return 900
+        return 700
     if "nvidia" in host or "nim" in host:
         return 2000
     return 4000

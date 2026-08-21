@@ -154,8 +154,8 @@ llm:
   # Note: Groq free models do not return clean JSON, so they are not recommended
   # as an LLM fallback for this classifier.
   providers: []
-  delay_seconds: 5.0   # seconds between LLM calls to stay within free-tier RPM limits
-  cooldown_minutes: 10 # how long to disable LLM after all providers are rate-limited (free-tier users may want 5)
+  delay_seconds: 10.0  # seconds between LLM calls to stay within free-tier RPM limits
+  cooldown_minutes: 5  # per-provider cooldown after rate-limit/quota
 
 # ── Regex rules (fast-path fallback when metadata is off/unavailable) ─────
 # Each category has a list of (regex, weight) patterns and a min_score.

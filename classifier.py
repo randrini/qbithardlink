@@ -499,8 +499,8 @@ def _preliminary_classify(name, tags, files, signals, use_metadata):
                     title = cand
                 sig_str = ",".join(signals.get("matched") or [])
                 # Exception: a strong US comic origin signal (e.g. Invincible, Marvel, DC)
-                # should not be overridden by metadata that labels the French edition as BD.
-                if cat == "bd" and "us-comic-origin" in signals.get("matched", []):
+                # should not be overridden by metadata that labels the French edition as BD or ebooks.
+                if "us-comic-origin" in signals.get("matched", []) and cat != "comics":
                     reasons.append(f"metadata:{prov} → {title!r} overruled by US comic origin signal")
                     return "comics", 0.92, reasons
                 reasons.append(f"metadata:{prov} → {title!r} (signals: {sig_str})")

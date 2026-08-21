@@ -56,8 +56,8 @@ DEFAULTS = {
         "timeout": 30,
         # New multi-provider list. If non-empty it overrides the legacy keys above.
         "providers": [],
-        "delay_seconds": 5.0,
-        "cooldown_minutes": 10,
+        "delay_seconds": 10.0,
+        "cooldown_minutes": 5,
     },
     "tag_overrides": {
         "manga": "manga", "manhwa": "manhwa", "webtoon": "webtoon",
