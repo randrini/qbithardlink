@@ -2229,6 +2229,9 @@ def _llm_request(payload, retries=2):
     that provider is put in cooldown and the next provider is tried. On transient
     failures, retries within the provider up to `retries` times, then moves to
     the next provider. If all providers are rate-limited, logs a warning.
+
+    Returns a dict {"text": raw response text, "provider_id": str} on success,
+    or None on failure.
     """
     if not HAS_REQUESTS:
         log.warning("LLM classification requested but `requests` is unavailable")
@@ -2254,7 +2257,7 @@ def _llm_request(payload, retries=2):
 
         result = _llm_request_for_provider(payload, provider, retries=retries)
         if result["ok"]:
-            return result["text"]
+            return {"text": result["text"], "provider_id": provider_id}
 
         last_status = result.get("status") or 0
         last_error = result.get("error")
@@ -2441,7 +2444,10 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         log.debug("LLM prompt is %d chars; truncating to 4000", prompt_len)
         prompt = prompt[:4000]
     raw = _llm_request({"messages": [{"role": "user", "content": prompt}]})
-    content = _llm_extract_content(raw)
+    if not raw:
+        return None, 0.0, []
+    content = _llm_extract_content(raw["text"])
+    provider_id = raw.get("provider_id", "llm")
     if not content:
         log.warning("LLM returned no usable content for %r", title)
         return None, 0.0, []
@@ -2461,7 +2467,8 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
     if isinstance(sources, str):
         sources = [sources]
     sources = [str(s).strip() for s in sources if str(s).strip()]
-    reasons = [f"llm:{cat} → " + ", ".join(sources) if sources else f"llm:{cat}"]
+    source_text = ", ".join(sources) if sources else "no sources"
+    reasons = [f"llm:{provider_id}:{cat} → {source_text}"]
     return cat, 0.85, reasons
 
 
