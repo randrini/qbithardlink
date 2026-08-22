@@ -2480,7 +2480,8 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
             f"Raw release name: {safe_title}\n"
             f"Files: {exts_str}\n"
             f"Signals: {signals_str}\n"
-            "Return JSON {\"format\":\"...\",\"sources\":[\"...\"]}. "
+            "You MUST return ONLY a JSON object. Do not include markdown, explanations, or thinking. "
+            "Return exactly: {\"format\":\"...\",\"sources\":[\"...\"]}\n"
             "Allowed formats: manga, manhwa, webtoon, manhua, comics, bd, light-novel, ebooks, audiobooks, artbook, doujinshi.\n"
             "Definitions:\n"
             "  'comics' = US/UK comic books (Marvel, DC, Image, Dark Horse, IDW, Boom, Valiant, Titan, Dynamite, Avatar, Oni, Vertigo, etc.) and game/novel adaptations in US comic format, regardless of language or publisher.\n"
@@ -2538,11 +2539,26 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         return None, 0.0, []
     content = _llm_extract_content(raw["text"])
     provider_id = raw.get("provider_id", "llm")
+
+    # Retry once on empty/unparseable response (common with smaller cloud models).
+    if not content:
+        log.debug("LLM provider %s returned no usable content for %r; retrying once", provider_id, title)
+        raw = _llm_request({"messages": [{"role": "user", "content": prompt + "\nIMPORTANT: Return ONLY valid JSON."}]})
+        if raw:
+            content = _llm_extract_content(raw["text"])
+            provider_id = raw.get("provider_id", provider_id)
+    data = _parse_llm_json(content) if content else None
+    if not data:
+        log.debug("LLM provider %s returned unparseable JSON for %r; retrying once", provider_id, title)
+        raw = _llm_request({"messages": [{"role": "user", "content": prompt + "\nIMPORTANT: Return ONLY valid JSON like {\"format\":\"...\",\"sources\":[\"...\"]}. No markdown."}]})
+        if raw:
+            content = _llm_extract_content(raw["text"])
+            provider_id = raw.get("provider_id", provider_id)
+            data = _parse_llm_json(content) if content else None
+
     if not content:
         log.warning("LLM provider %s returned no usable content for %r", provider_id, title)
         return None, 0.0, []
-
-    data = _parse_llm_json(content)
     if not data:
         log.warning("LLM provider %s returned unparseable JSON for %r: %r", provider_id, title, content[:200])
         return None, 0.0, []

@@ -152,9 +152,9 @@ llm:
   #     api_key: "sk-or-v1-..."
   #     timeout: 30
   #   - endpoint: "https://ollama.com/api/chat"
-  #     model: "gpt-oss:20b"
+  #     model: "gpt-oss:120b"
   #     api_key: "YOUR_OLLAMA_API_KEY"
-  #     timeout: 30
+  #     timeout: 60
   providers: []
   delay_seconds: 10.0  # seconds between LLM calls to stay within free-tier RPM limits
   cooldown_minutes: 5  # per-provider cooldown after rate-limit/quota
