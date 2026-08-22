@@ -2004,11 +2004,83 @@ def _strip_markdown_fences(text):
     return t.strip()
 
 
+def _repair_truncated_json(text):
+    """Attempt to repair a truncated JSON object from an LLM reply.
+
+    Handles common truncation cases: unclosed strings, missing braces/brackets.
+    Returns a repaired string or None if no repair is possible.
+    """
+    t = str(text or "").strip()
+    start = t.find("{")
+    if start == -1:
+        return None
+
+    # Work on the substring starting at the first '{'
+    s = t[start:]
+    # Strip trailing noise after the logical end of the object.
+    # Find the position where braces would balance if we add missing closings.
+    open_braces = 0
+    open_brackets = 0
+    in_string = False
+    escape = False
+    last_valid_idx = len(s) - 1
+
+    for i, ch in enumerate(s):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            open_braces += 1
+        elif ch == "}":
+            open_braces -= 1
+            if open_braces == 0 and open_brackets == 0:
+                last_valid_idx = i
+        elif ch == "[":
+            open_brackets += 1
+        elif ch == "]":
+            open_brackets -= 1
+
+    # If we ended inside a string, close it.
+    if in_string:
+        s = s + '"'
+
+    # Close any unclosed brackets/braces in reverse order.
+    for _ in range(open_brackets):
+        s = s + "]"
+    for _ in range(open_braces):
+        s = s + "}"
+
+    # Trim anything after the final closing brace (if one exists now).
+    final_close = -1
+    depth = 0
+    for i, ch in enumerate(s):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                final_close = i
+    if final_close != -1:
+        s = s[:final_close + 1]
+
+    return s
+
+
 def _parse_llm_json(text):
     """Robustly parse a JSON object out of an LLM reply.
 
-    Tries json.loads directly, then strips markdown fences, then falls back
-    to extracting the first balanced {...} block.
+    Tries json.loads directly, then strips markdown fences, then repairs
+    truncated JSON, then falls back to extracting the first balanced {...} block.
+    As a last resort, detects a known category keyword and returns a minimal
+    valid JSON object.
     """
     t = _strip_markdown_fences(text)
     if not t:
@@ -2019,6 +2091,18 @@ def _parse_llm_json(text):
             return data
     except Exception:
         pass
+
+    # Repair truncated JSON (common with smaller models like gpt-oss:20b).
+    repaired = _repair_truncated_json(t)
+    if repaired:
+        try:
+            data = json.loads(repaired)
+            if isinstance(data, dict):
+                log.debug("Repaired truncated LLM JSON")
+                return data
+        except Exception:
+            pass
+
     # Fallback: find the first balanced {...} block.
     start = t.find("{")
     if start == -1:
@@ -2037,6 +2121,12 @@ def _parse_llm_json(text):
                 except Exception:
                     pass
                 break
+
+    # Last resort: if the reply contains a known category word, synthesize JSON.
+    lowered = t.lower()
+    for fmt in ("manga", "manhwa", "webtoon", "comics", "bd", "light-novel", "ebooks", "audiobooks"):
+        if re.search(rf"\b{re.escape(fmt)}\b", lowered):
+            return {"format": fmt, "sources": ["keyword extraction from malformed LLM reply"]}
     return None
 
 
