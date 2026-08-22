@@ -2569,6 +2569,26 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         log.warning("LLM provider %s returned unknown format %r for %r", provider_id, fmt, title)
         return None, 0.0, []
 
+    # ── Post-LLM guard: preserve strong preliminary categories the LLM commonly misoverrides ──
+    prelim_cat = str(preliminary.get("category") or "").strip().lower() if preliminary else ""
+    prelim_reasons = str(preliminary.get("reasons") or "").lower() if preliminary else ""
+    title_lower = str(title or "").lower()
+
+    # Newspaper/magazine releases should stay mags even if LLM sees a PDF/CBZ.
+    _MAGS_TOKENS = {
+        "l'equipe", "le monde", "le figaro", "20 minutes", "metro",
+        "gazzetta", "corriere", "sole 24 ore", "journaux", "presse",
+        "newspaper", "magazine", "weekly", "issue",
+    }
+    if prelim_cat == "mags" and cat == "ebooks" and any(tok in title_lower for tok in _MAGS_TOKENS):
+        log.debug("LLM overrode strong mags preliminary for %r; preserving mags", title)
+        return "mags", 0.85, [f"llm:{provider_id}:mags → newspaper/magazine token preserved from cascade"]
+
+    # Light-novel metadata (RANOBEDB, LN markers) should stay light-novel.
+    if prelim_cat == "light-novel" and cat == "manga" and ("ranobedb" in prelim_reasons or "light novel" in prelim_reasons):
+        log.debug("LLM overrode strong light-novel preliminary for %r; preserving light-novel", title)
+        return "light-novel", 0.85, [f"llm:{provider_id}:light-novel → RANOBEDB/light-novel metadata preserved from cascade"]
+
     sources = data.get("sources") or []
     if isinstance(sources, str):
         sources = [sources]
