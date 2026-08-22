@@ -2539,18 +2539,18 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
     content = _llm_extract_content(raw["text"])
     provider_id = raw.get("provider_id", "llm")
     if not content:
-        log.warning("LLM returned no usable content for %r", title)
+        log.warning("LLM provider %s returned no usable content for %r", provider_id, title)
         return None, 0.0, []
 
     data = _parse_llm_json(content)
     if not data:
-        log.warning("LLM returned unparseable JSON for %r: %r", title, content[:200])
+        log.warning("LLM provider %s returned unparseable JSON for %r: %r", provider_id, title, content[:200])
         return None, 0.0, []
 
     fmt = str(data.get("format") or "").strip().lower()
     cat = _LLM_FORMAT_TO_CATEGORY.get(fmt)
     if not cat:
-        log.warning("LLM returned unknown format %r for %r", fmt, title)
+        log.warning("LLM provider %s returned unknown format %r for %r", provider_id, fmt, title)
         return None, 0.0, []
 
     sources = data.get("sources") or []
