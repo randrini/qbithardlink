@@ -149,6 +149,8 @@ def _env_override(cfg):
         cfg["llm"]["timeout"] = int(os.environ["LLM_TIMEOUT"])
     if os.environ.get("LLM_COOLDOWN_MINUTES"):
         cfg["llm"]["cooldown_minutes"] = float(os.environ["LLM_COOLDOWN_MINUTES"])
+    if os.environ.get("LLM_DELAY_SECONDS"):
+        cfg["llm"]["delay_seconds"] = float(os.environ["LLM_DELAY_SECONDS"])
     if os.environ.get("LLM_PROVIDERS"):
         try:
             parsed = json.loads(os.environ["LLM_PROVIDERS"])

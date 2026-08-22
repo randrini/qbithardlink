@@ -58,6 +58,7 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_TIMEOUT=${LLM_TIMEOUT:-30}
       - LLM_COOLDOWN_MINUTES=${LLM_COOLDOWN_MINUTES:-10}
+      - LLM_DELAY_SECONDS=${LLM_DELAY_SECONDS:-10.0}
     volumes:
       # Source code (bind-mounted for easy updates; the Dockerfile also copies them).
       - ./classifier.py:/app/classifier.py:ro
