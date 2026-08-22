@@ -161,6 +161,7 @@ _US_COMIC_ORIGIN_TOKENS = {
     "urban comics", "dc deluxe", "dc collectibles",
     "swamp thing", "hellblazer", "constantine",
     "bloodborne", "invincible", "robert kirkman",
+    "boom!", "boom studios", "chapman", "rebelka", "titan", "titan comics",
 }
 _COMIC_PUBLISHERS = {"marvel", "dc comics", "dc", "image", "dark horse", "idw", "boom", "vertigo", "panini", "urban comics"}
 _BD_TOKENS = {
