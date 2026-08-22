@@ -44,6 +44,7 @@ DEFAULTS = {
         "google_books_api_key": "",
         "comicvine_api_key": "",
         "langsearch_api_key": "",
+        "ollama_api_key": "",
         "providers": {},
     },
     "llm": {
@@ -132,6 +133,8 @@ def _env_override(cfg):
         cfg["metadata"]["comicvine_api_key"] = os.environ["COMICVINE_API_KEY"]
     if os.environ.get("LANGSEARCH_API_KEY"):
         cfg["metadata"]["langsearch_api_key"] = os.environ["LANGSEARCH_API_KEY"]
+    if os.environ.get("OLLAMA_API_KEY"):
+        cfg["metadata"]["ollama_api_key"] = os.environ["OLLAMA_API_KEY"]
     if os.environ.get("LLM_ENABLED"):
         cfg["llm"]["enabled"] = os.environ["LLM_ENABLED"].strip().lower() in ("1", "true", "yes", "on")
     if os.environ.get("LLM_MODE"):

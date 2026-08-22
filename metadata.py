@@ -68,6 +68,9 @@ COMICVINE_API_KEY = os.environ.get("COMICVINE_API_KEY", "").strip()
 # LangSearch API key (web-search context for LLM)
 LANGSEARCH_API_KEY = os.environ.get("LANGSEARCH_API_KEY", "").strip()
 
+# Ollama Cloud API key (cloud LLM provider + web-search context)
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "").strip()
+
 
 def _is_private_url(url: str) -> bool:
     """Return True if the URL host is an RFC1918/private or loopback address."""
@@ -98,6 +101,10 @@ try:
         GOOGLE_BOOKS_API_KEY = _cfg.get("metadata.google_books_api_key")
     if _cfg.get("metadata.comicvine_api_key"):
         COMICVINE_API_KEY = _cfg.get("metadata.comicvine_api_key")
+    if _cfg.get("metadata.langsearch_api_key"):
+        LANGSEARCH_API_KEY = _cfg.get("metadata.langsearch_api_key")
+    if _cfg.get("metadata.ollama_api_key"):
+        OLLAMA_API_KEY = _cfg.get("metadata.ollama_api_key")
 except Exception as _e:
     log.warning("metadata: config import failed: %s; using defaults", _e)
     _PROVIDER_SETTINGS = {}
@@ -1868,22 +1875,21 @@ def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
 
 
 def _langsearch_context(title):
-    """Fetch web-search snippets from LangSearch to enrich the LLM prompt.
+    """Fetch web-search snippets to enrich the LLM prompt.
 
-    LangSearch is a web-search API, not a chat LLM. We use its results as
-    factual context for ambiguous titles (e.g. French edition of a US comic).
+    Tries LangSearch first, then falls back to Ollama Cloud web search if
+    LangSearch is unavailable or rate-limited. Uses results as factual context
+    for ambiguous titles (e.g. French edition of a US comic).
     Returns a list of {title, url, summary} dicts or None on failure.
 
-    Rate limiting (Free tier): QPS=1, QPM=60, QPD=1000.
+    Rate limiting (LangSearch Free tier): QPS=1, QPM=60, QPD=1000.
     - 1s minimum between calls (respects QPS)
     - 60s cooldown on 429 response
     - Cache results to avoid duplicate calls
     """
-    key = (LANGSEARCH_API_KEY or str(_cfg.get("metadata.langsearch_api_key", "") or "")).strip()
-    if not key:
-        return None
+    cache_key = str(title).strip().lower()
 
-    # Rate limiting state (per-module, not per-instance)
+    # Shared rate limiting state (per-module, not per-instance)
     if not hasattr(_langsearch_context, "_last_call"):
         _langsearch_context._last_call = 0.0
         _langsearch_context._cooldown_until = 0.0
@@ -1899,64 +1905,76 @@ def _langsearch_context(title):
         _langsearch_context._daily_count = 0
         _langsearch_context._daily_reset = now
 
-    # Check daily quota (leave 10% buffer)
-    if _langsearch_context._daily_count >= 900:
-        log.warning("LangSearch daily quota nearing limit (%d/1000), skipping", _langsearch_context._daily_count)
-        return None
-
-    # Check if we're in cooldown
-    if now < _langsearch_context._cooldown_until:
-        remaining = int(_langsearch_context._cooldown_until - now)
-        log.debug("LangSearch in cooldown for %ds, skipping", remaining)
-        return None
-
     # Check cache (exact match)
-    cache_key = str(title).strip().lower()
     if cache_key in _langsearch_context._cache:
-        log.debug("LangSearch cache hit for %r", title)
+        log.debug("Web-search cache hit for %r", title)
         return _langsearch_context._cache[cache_key]
 
-    # Rate limit: wait minimum interval between calls (QPS=1)
-    elapsed = now - _langsearch_context._last_call
-    if elapsed < _langsearch_context._min_interval:
-        time.sleep(_langsearch_context._min_interval - elapsed)
+    # ── Try LangSearch first ─────────────────────────────────────────────────
+    ls_key = (LANGSEARCH_API_KEY or str(_cfg.get("metadata.langsearch_api_key", "") or "")).strip()
+    if ls_key:
+        # Check daily quota (leave 10% buffer)
+        if _langsearch_context._daily_count < 900:
+            if now >= _langsearch_context._cooldown_until:
+                # Rate limit: wait minimum interval between calls (QPS=1)
+                elapsed = now - _langsearch_context._last_call
+                if elapsed < _langsearch_context._min_interval:
+                    time.sleep(_langsearch_context._min_interval - elapsed)
 
-    try:
-        payload = {"query": str(title)[:200], "summary": True, "count": 3}
-        headers = {"Authorization": f"Bearer {key}"}
-        data = _http_post_json("https://api.langsearch.com/v1/web-search", payload, headers=headers, timeout=10)
-        _langsearch_context._last_call = time.time()
-        _langsearch_context._daily_count += 1
+                try:
+                    payload = {"query": str(title)[:200], "summary": True, "count": 3}
+                    headers = {"Authorization": f"Bearer {ls_key}"}
+                    data = _http_post_json("https://api.langsearch.com/v1/web-search", payload, headers=headers, timeout=10)
+                    _langsearch_context._last_call = time.time()
+                    _langsearch_context._daily_count += 1
 
-        if not isinstance(data, dict):
-            return None
+                    if isinstance(data, dict):
+                        # Check for rate limit response
+                        code = data.get("code")
+                        if code == 429:
+                            log.warning("LangSearch rate limited (429); entering 60s cooldown")
+                            _langsearch_context._cooldown_until = time.time() + 60
+                        else:
+                            pages = (data.get("data") or {}).get("webPages", {}).get("value", [])
+                            results = []
+                            for p in pages:
+                                if not isinstance(p, dict):
+                                    continue
+                                results.append({
+                                    "title": str(p.get("name") or "").strip(),
+                                    "url": str(p.get("url") or "").strip(),
+                                    "summary": str(p.get("summary") or p.get("snippet") or "").strip(),
+                                })
+                            if results:
+                                _langsearch_context._cache[cache_key] = results
+                                return results
+                except Exception as e:
+                    log.debug("LangSearch context failed for %r: %s", title, e)
 
-        # Check for rate limit response
-        code = data.get("code")
-        if code == 429:
-            log.warning("LangSearch rate limited (429); entering 60s cooldown")
-            _langsearch_context._cooldown_until = time.time() + 60
-            return None
+    # ── Fallback to Ollama Cloud web search ─────────────────────────────────
+    oa_key = (OLLAMA_API_KEY or str(_cfg.get("metadata.ollama_api_key", "") or "")).strip()
+    if oa_key:
+        try:
+            payload = {"query": str(title)[:200], "max_results": 3}
+            headers = {"Authorization": f"Bearer {oa_key}"}
+            data = _http_post_json("https://ollama.com/api/web_search", payload, headers=headers, timeout=10)
+            if isinstance(data, dict):
+                results = []
+                for r in data.get("results", []):
+                    if not isinstance(r, dict):
+                        continue
+                    results.append({
+                        "title": str(r.get("title") or "").strip(),
+                        "url": str(r.get("url") or "").strip(),
+                        "summary": str(r.get("content") or "").strip(),
+                    })
+                if results:
+                    _langsearch_context._cache[cache_key] = results
+                    return results
+        except Exception as e:
+            log.debug("Ollama web search failed for %r: %s", title, e)
 
-        pages = (data.get("data") or {}).get("webPages", {}).get("value", [])
-        results = []
-        for p in pages:
-            if not isinstance(p, dict):
-                continue
-            results.append({
-                "title": str(p.get("name") or "").strip(),
-                "url": str(p.get("url") or "").strip(),
-                "summary": str(p.get("summary") or p.get("snippet") or "").strip(),
-            })
-        result = results or None
-
-        # Cache the result
-        _langsearch_context._cache[cache_key] = result
-        return result
-
-    except Exception as e:
-        log.debug("LangSearch context failed for %r: %s", title, e)
-        return None
+    return None
 
 
 def _llm_enabled():
@@ -2157,12 +2175,13 @@ def _llm_request_for_provider(payload, provider, retries=2):
             "max_tokens": 500,
         }
     else:
-        # Ollama native /api/chat
+        # Ollama native /api/chat (also covers Ollama Cloud at ollama.com/api/chat)
         body = {
             "model": model,
             "messages": payload.get("messages"),
             "stream": False,
-            "options": {"temperature": 0.0, "num_predict": 300},
+            "format": "json",
+            "options": {"temperature": 0.0, "num_predict": 500},
         }
     last_err = None
     last_status = 0
