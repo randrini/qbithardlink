@@ -152,7 +152,7 @@ llm:
   #     api_key: "sk-or-v1-..."
   #     timeout: 30
   #   - endpoint: "https://ollama.com/api/chat"
-  #     model: "gemma4:12b"
+  #     model: "gpt-oss:20b"
   #     api_key: "YOUR_OLLAMA_API_KEY"
   #     timeout: 30
   providers: []
