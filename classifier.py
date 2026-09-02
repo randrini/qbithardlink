@@ -606,6 +606,7 @@ def classify_with_metadata(name, tags=None, files=None, use_metadata=False):
                     "category": prelim_cat,
                     "confidence": prelim_conf,
                     "reasons": prelim_reasons,
+                    "publisher": str(metadata.get("publisher") or "").strip(),
                 },
             )
             if llm_cat:

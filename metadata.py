@@ -2600,6 +2600,20 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         log.debug("LLM overrode strong bd preliminary (known BD artist) for %r; preserving bd", title)
         return "bd", 0.85, [f"llm:{provider_id}:bd → known Franco-Belgian BD artist preserved from cascade"]
 
+    # French BD publishers: if metadata identified a known BD publisher and the
+    # cascade proposed bd, don't let the LLM flip it to ebooks.
+    _BD_PUBLISHERS = {
+        "ankama", "dargaud", "dupuis", "casterman", "le lombard", "glénat",
+        "glenat", "delcourt", "bamboo", "albin michel", "soleil", "ombres noires",
+        "flblb", "humanoides associes", "clair de lune", "gallimard bd",
+        "la boite a bulles", "la boîte à bulles", "bayard jeunesse", "vent d'ouest",
+        "vents d'ouest", "paquet", "futuropolis", "actes sud", "kana", "pika",
+    }
+    prelim_publisher = str(preliminary.get("publisher") or "").lower() if preliminary else ""
+    if prelim_cat == "bd" and cat == "ebooks" and any(pub in prelim_publisher for pub in _BD_PUBLISHERS):
+        log.debug("LLM overrode strong bd preliminary (BD publisher %r) for %r; preserving bd", prelim_publisher, title)
+        return "bd", 0.85, [f"llm:{provider_id}:bd → BD publisher {prelim_publisher!r} preserved from cascade"]
+
     sources = data.get("sources") or []
     if isinstance(sources, str):
         sources = [sources]
