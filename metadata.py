@@ -2573,6 +2573,13 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
     prelim_cat = str(preliminary.get("category") or "").strip().lower() if preliminary else ""
     prelim_reasons = str(preliminary.get("reasons") or "").lower() if preliminary else ""
     title_lower = str(title or "").lower()
+    matched_signals = [str(s).lower() for s in (signals or {}).get("matched") or []]
+
+    # US comic origin signal is authoritative: the LLM must never flip a US
+    # comic (Marvel/DC/Image/etc.) to bd/manga/manhua.
+    if "us-comic-origin" in matched_signals and cat != "comics":
+        log.debug("LLM overrode us-comic-origin signal for %r; preserving comics", title)
+        return "comics", 0.85, [f"llm:{provider_id}:comics → us-comic-origin signal preserved from cascade"]
 
     # Newspaper/magazine releases should stay mags even if LLM sees a PDF/CBZ.
     _MAGS_TOKENS = {
@@ -2595,13 +2602,17 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         "hermann", "schultheiss", "franquin", "moebius", "giraud", "tardi",
         "pratt", "bilal", "lois", "christin", "vance", "van hamme",
         "rosinski", "sente", "jodorowsky", "arzioth", "gimenez",
+        "oger", "ramadier", "bonneau", "fournier", "makyo", "dorison",
+        "runberg", "poupard", "dugommier", "ers", "fejard", "jurdic",
+        "fonteneau", "balez", "perger", "dobbs", "vandenhende",
     }
     if prelim_cat == "bd" and cat in ("manhua", "comics", "manga") and any(tok in title_lower for tok in _BD_ARTIST_TOKENS):
         log.debug("LLM overrode strong bd preliminary (known BD artist) for %r; preserving bd", title)
         return "bd", 0.85, [f"llm:{provider_id}:bd → known Franco-Belgian BD artist preserved from cascade"]
 
-    # French BD publishers: if metadata identified a known BD publisher and the
-    # cascade proposed bd, don't let the LLM flip it to ebooks.
+    # French BD publishers: if metadata identified a known BD publisher, the
+    # LLM must not flip the result to ebooks — regardless of the preliminary
+    # category (the cascade may have been misled by a generic provider).
     _BD_PUBLISHERS = {
         "ankama", "dargaud", "dupuis", "casterman", "le lombard", "glénat",
         "glenat", "delcourt", "bamboo", "albin michel", "soleil", "ombres noires",
@@ -2610,8 +2621,8 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
         "vents d'ouest", "paquet", "futuropolis", "actes sud", "kana", "pika",
     }
     prelim_publisher = str(preliminary.get("publisher") or "").lower() if preliminary else ""
-    if prelim_cat == "bd" and cat == "ebooks" and any(pub in prelim_publisher for pub in _BD_PUBLISHERS):
-        log.debug("LLM overrode strong bd preliminary (BD publisher %r) for %r; preserving bd", prelim_publisher, title)
+    if cat == "ebooks" and any(pub in prelim_publisher for pub in _BD_PUBLISHERS):
+        log.debug("LLM overrode BD publisher %r to ebooks for %r; preserving bd", prelim_publisher, title)
         return "bd", 0.85, [f"llm:{provider_id}:bd → BD publisher {prelim_publisher!r} preserved from cascade"]
 
     sources = data.get("sources") or []
