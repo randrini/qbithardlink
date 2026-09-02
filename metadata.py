@@ -2271,7 +2271,7 @@ def _llm_request_for_provider(payload, provider, retries=2):
             "messages": payload.get("messages"),
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.0, "num_predict": 500},
+            "options": {"temperature": 0.0, "num_predict": 800},
         }
     last_err = None
     last_status = 0
@@ -2588,6 +2588,17 @@ def llm_classify(title, files=None, signals=None, preliminary=None):
     if prelim_cat == "light-novel" and cat == "manga" and ("ranobedb" in prelim_reasons or "light novel" in prelim_reasons):
         log.debug("LLM overrode strong light-novel preliminary for %r; preserving light-novel", title)
         return "light-novel", 0.85, [f"llm:{provider_id}:light-novel → RANOBEDB/light-novel metadata preserved from cascade"]
+
+    # Known BD artists: if the cascade proposed bd and the title contains a
+    # known Franco-Belgian creator, don't let the LLM flip it to manhua/comics.
+    _BD_ARTIST_TOKENS = {
+        "hermann", "schultheiss", "franquin", "moebius", "giraud", "tardi",
+        "pratt", "bilal", "lois", "christin", "vance", "van hamme",
+        "rosinski", "sente", "jodorowsky", "arzioth", "gimenez",
+    }
+    if prelim_cat == "bd" and cat in ("manhua", "comics", "manga") and any(tok in title_lower for tok in _BD_ARTIST_TOKENS):
+        log.debug("LLM overrode strong bd preliminary (known BD artist) for %r; preserving bd", title)
+        return "bd", 0.85, [f"llm:{provider_id}:bd → known Franco-Belgian BD artist preserved from cascade"]
 
     sources = data.get("sources") or []
     if isinstance(sources, str):

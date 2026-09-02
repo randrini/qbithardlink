@@ -169,6 +169,10 @@ _BD_TOKENS = {
     "glénat", "glenat", "dupuis", "casterman", "le lombard", "dargaud",
     "delcourt", "bamboo", "albin michel", "soleil", "ombres noires",
     "flblb", "humanoides associes", "clair de lune",
+    # Known BD artists (their works are original Franco-Belgian creations).
+    "hermann", "schultheiss", "franquin", "moebius", "giraud", "tardi",
+    "pratt", "bilal", "lois", "christin", "vance", "van hamme",
+    "rosinski", "sente", "jodorowsky", "arzioth", "gimenez",
 }
 _LN_TOKENS = {"light novel", "ln", "ranobe", "web novel"}
 _AUDIOBOOK_TOKENS = {"audiobook", "m4b", "audible"}
